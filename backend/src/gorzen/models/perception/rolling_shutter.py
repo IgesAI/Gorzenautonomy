@@ -1,0 +1,89 @@
+"""Rolling shutter distortion model and risk scoring.
+
+Rolling shutter exposes sensor lines sequentially, causing skew/wobble
+proportional to velocity and angular rate during readout.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+
+from gorzen.models.base import ModelOutput, SubsystemModel
+
+
+class RollingShutterModel(SubsystemModel):
+    """Rolling-shutter distortion risk model.
+
+    Computes image-plane displacement from RS readout during motion.
+    Global shutter cameras have readout_time_ms = 0 and produce zero distortion.
+    """
+
+    def parameter_names(self) -> list[str]:
+        return ["shutter_type", "readout_time_ms", "pixel_height"]
+
+    def state_names(self) -> list[str]:
+        return []
+
+    def output_names(self) -> list[str]:
+        return [
+            "rs_skew_px", "rs_wobble_px", "rs_total_distortion_px",
+            "rs_risk_score", "rs_feasible",
+        ]
+
+    def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:
+        shutter = str(params.get("shutter_type", "rolling"))
+        readout_ms = params.get("readout_time_ms", 30.0)
+        px_h = params.get("pixel_height", 3000)
+
+        v_ground = conditions.get("airspeed_ms", 10.0)
+        gsd_m = conditions.get("gsd_cm_px", 1.0) / 100.0
+        angular_rate_dps = conditions.get("angular_rate_dps", 5.0)
+        max_blur = conditions.get("max_blur_px", 0.5)
+
+        if shutter == "global" or readout_ms <= 0:
+            return ModelOutput(
+                values={
+                    "rs_skew_px": 0.0, "rs_wobble_px": 0.0,
+                    "rs_total_distortion_px": 0.0, "rs_risk_score": 0.0,
+                    "rs_feasible": 1.0,
+                },
+                units={
+                    "rs_skew_px": "px", "rs_wobble_px": "px",
+                    "rs_total_distortion_px": "px", "rs_risk_score": "1",
+                    "rs_feasible": "1",
+                },
+            )
+
+        t_readout = readout_ms / 1000.0
+
+        # Skew: lateral displacement across full frame due to translational motion
+        ground_travel_during_readout = v_ground * t_readout
+        skew_px = ground_travel_during_readout / (gsd_m + 1e-9)
+
+        # Wobble: from angular velocity during readout
+        angular_rate_rps = np.radians(angular_rate_dps)
+        focal_px = px_h  # rough approximation
+        wobble_rad = angular_rate_rps * t_readout
+        wobble_px = wobble_rad * focal_px
+
+        total = np.sqrt(skew_px ** 2 + wobble_px ** 2)
+
+        # Risk score: 0 = no risk, 1 = exceeds budget by 2x+
+        risk = min(total / (max_blur + 1e-6), 2.0) / 2.0
+        feasible = total <= max_blur * 2.0  # RS budget is typically 2x motion blur budget
+
+        return ModelOutput(
+            values={
+                "rs_skew_px": skew_px,
+                "rs_wobble_px": wobble_px,
+                "rs_total_distortion_px": total,
+                "rs_risk_score": risk,
+                "rs_feasible": float(feasible),
+            },
+            units={
+                "rs_skew_px": "px", "rs_wobble_px": "px",
+                "rs_total_distortion_px": "px", "rs_risk_score": "1",
+                "rs_feasible": "1",
+            },
+            feasible=feasible,
+        )

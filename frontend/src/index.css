@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --glass-blur: 20px;
+    --glass-bg: rgba(15, 20, 40, 0.75);
+    --glass-border: rgba(255, 255, 255, 0.12);
+    --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    --accent-primary: #2f7fff;
+    --accent-secondary: #56a4ff;
+    --text-primary: rgba(255, 255, 255, 0.95);
+    --text-secondary: rgba(255, 255, 255, 0.65);
+    --text-tertiary: rgba(255, 255, 255, 0.40);
+    --success: #10b981;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+  }
+
+  body {
+    background: linear-gradient(135deg, #0a0e1a 0%, #111827 50%, #0f172a 100%);
+    min-height: 100vh;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.15) transparent;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+    border-radius: 12px;
+  }
+
+  .glass-panel-elevated {
+    background: rgba(20, 28, 55, 0.85);
+    backdrop-filter: blur(40px);
+    -webkit-backdrop-filter: blur(40px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+    border-radius: 12px;
+  }
+
+  .glass-button {
+    @apply px-4 py-2 rounded-lg font-medium transition-all duration-200;
+    background: rgba(47, 127, 255, 0.15);
+    border: 1px solid rgba(47, 127, 255, 0.30);
+    color: var(--accent-secondary);
+  }
+
+  .glass-button:hover {
+    background: rgba(47, 127, 255, 0.25);
+    border-color: rgba(47, 127, 255, 0.50);
+  }
+
+  .glass-input {
+    @apply w-full px-3 py-2 rounded-lg text-sm;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    color: var(--text-primary);
+  }
+
+  .glass-input:focus {
+    @apply outline-none;
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 2px rgba(47, 127, 255, 0.2);
+  }
+}

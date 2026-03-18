@@ -1,0 +1,138 @@
+"""Base classes for all physics and perception subsystem models."""
+
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from typing import Any
+
+import numpy as np
+
+
+@dataclass
+class ModelOutput:
+    """Container for subsystem model evaluation results."""
+
+    values: dict[str, float] = field(default_factory=dict)
+    units: dict[str, str] = field(default_factory=dict)
+    feasible: bool = True
+    warnings: list[str] = field(default_factory=list)
+
+    def __getitem__(self, key: str) -> float:
+        return self.values[key]
+
+    def get(self, key: str, default: float = 0.0) -> float:
+        return self.values.get(key, default)
+
+
+class SubsystemModel(ABC):
+    """Abstract base for all composable subsystem models.
+
+    Each model exposes:
+    - parameters: the configurable inputs with metadata
+    - states: current internal state vector
+    - evaluate: forward-pass producing ModelOutput
+    - jacobian: partial derivatives for UQ propagation
+    """
+
+    @abstractmethod
+    def parameter_names(self) -> list[str]:
+        """Return ordered list of parameter names this model depends on."""
+        ...
+
+    @abstractmethod
+    def state_names(self) -> list[str]:
+        """Return ordered list of internal state variable names."""
+        ...
+
+    @abstractmethod
+    def output_names(self) -> list[str]:
+        """Return ordered list of output names produced by evaluate()."""
+        ...
+
+    @abstractmethod
+    def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:
+        """Run the model forward pass.
+
+        Args:
+            params: subsystem parameters (from twin config).
+            conditions: operating conditions (speed, altitude, temperature, etc.).
+        """
+        ...
+
+    def jacobian(
+        self,
+        params: dict[str, float],
+        conditions: dict[str, float],
+        wrt: list[str] | None = None,
+        eps: float = 1e-6,
+    ) -> np.ndarray:
+        """Numerical Jacobian via central finite differences.
+
+        Returns shape (n_outputs, n_wrt) where wrt defaults to all params.
+        Subclasses may override with analytic derivatives.
+        """
+        if wrt is None:
+            wrt = self.parameter_names()
+
+        baseline = self.evaluate(params, conditions)
+        out_names = self.output_names()
+        n_out = len(out_names)
+        n_in = len(wrt)
+        jac = np.zeros((n_out, n_in))
+
+        for j, pname in enumerate(wrt):
+            p_plus = dict(params)
+            p_minus = dict(params)
+            h = max(abs(params.get(pname, 0.0)) * eps, eps)
+            p_plus[pname] = params.get(pname, 0.0) + h
+            p_minus[pname] = params.get(pname, 0.0) - h
+
+            out_plus = self.evaluate(p_plus, conditions)
+            out_minus = self.evaluate(p_minus, conditions)
+
+            for i, oname in enumerate(out_names):
+                jac[i, j] = (out_plus.get(oname) - out_minus.get(oname)) / (2 * h)
+
+        return jac
+
+
+class CompositeModel:
+    """Chains multiple SubsystemModels, passing outputs between them."""
+
+    def __init__(self, models: list[SubsystemModel]) -> None:
+        self.models = models
+
+    def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:
+        combined = ModelOutput()
+        current_conditions = dict(conditions)
+
+        for model in self.models:
+            out = model.evaluate(params, current_conditions)
+            combined.values.update(out.values)
+            combined.units.update(out.units)
+            combined.feasible = combined.feasible and out.feasible
+            combined.warnings.extend(out.warnings)
+            current_conditions.update(out.values)
+
+        return combined
+
+    def all_parameter_names(self) -> list[str]:
+        seen: set[str] = set()
+        result: list[str] = []
+        for m in self.models:
+            for p in m.parameter_names():
+                if p not in seen:
+                    seen.add(p)
+                    result.append(p)
+        return result
+
+    def all_output_names(self) -> list[str]:
+        seen: set[str] = set()
+        result: list[str] = []
+        for m in self.models:
+            for o in m.output_names():
+                if o not in seen:
+                    seen.add(o)
+                    result.append(o)
+        return result
