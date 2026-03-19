@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Generic, TypeVar
 
@@ -49,7 +49,7 @@ class Provenance(BaseModel):
     document_id: str | None = None
     test_id: str | None = None
     log_id: str | None = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     notes: str | None = None
 
 

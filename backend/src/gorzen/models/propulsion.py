@@ -56,7 +56,6 @@ class ICEEngineModel(SubsystemModel):
         max_rpm = params.get("max_power_rpm", 8350)
         bsfc = params.get("bsfc_cruise_g_kwh", 500.0)
         gen_cont_w = params.get("generator_output_w", 200.0)
-        params.get("generator_output_intermittent_w", 400.0)
         has_alt_comp = bool(params.get("altitude_compensation", 1))
         has_hybrid = bool(params.get("hybrid_boost_available", 1))
         hybrid_kw = params.get("hybrid_boost_power_kw", 0.5)

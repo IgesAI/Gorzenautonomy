@@ -56,15 +56,13 @@ class FuelSystemModel(SubsystemModel):
         density = params.get("fuel_density_kg_l", FUEL_DENSITIES.get(fuel_type, 0.81))
         tank_l = params.get("tank_capacity_l", 18.5)
         tank_kg = params.get("tank_capacity_kg", tank_l * density)
-        params.get("usable_fuel_pct", 95.0) / 100.0
+        usable_frac = params.get("usable_fuel_pct", 95.0) / 100.0
         reserve_pct = params.get("fuel_reserve_pct", 15.0) / 100.0
 
         fuel_flow_g_hr = conditions.get("fuel_flow_rate_g_hr", 1000.0)
-        conditions.get("fuel_flow_rate_l_hr", fuel_flow_g_hr / (density * 1000.0))
         elapsed_hr = conditions.get("mission_elapsed_hr", 0.0)
         cruise_speed_kts = conditions.get("cruise_speed_kts", 42.0)
         mass_empty = conditions.get("mass_empty_kg", 34.0)
-        conditions.get("mass_mtow_kg", 68.0)
         payload_mass = conditions.get("payload_mass_kg", 5.0)
 
         # Fuel burned so far
@@ -73,9 +71,10 @@ class FuelSystemModel(SubsystemModel):
         fuel_remaining_l = fuel_remaining_kg / density
         fuel_remaining_pct = (fuel_remaining_kg / (tank_kg + 1e-9)) * 100.0
 
-        # Reserve fuel
+        # Usable fuel accounts for tank geometry (not all fuel is accessible)
+        max_usable_kg = tank_kg * usable_frac
         reserve_kg = tank_kg * reserve_pct
-        usable_remaining = max(fuel_remaining_kg - reserve_kg, 0.0)
+        usable_remaining = max(min(fuel_remaining_kg, max_usable_kg) - reserve_kg, 0.0)
 
         # Endurance from remaining fuel
         if fuel_flow_g_hr > 0:
@@ -148,10 +147,8 @@ class GeneratorModel(SubsystemModel):
     def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:
         gen_cont = params.get("generator_output_w", 200.0)
         gen_int = params.get("generator_output_intermittent_w", 400.0)
-        params.get("generator_voltage_v", 28.0)
         charge_rate = params.get("generator_charge_rate_w", 200.0)
         has_hybrid = bool(params.get("hybrid_boost_available", 1))
-        params.get("hybrid_boost_power_kw", 0.5)
 
         elec_demand = conditions.get("total_electrical_power_W", 100.0)
         engine_load_pct = conditions.get("throttle_pct", 50.0) / 100.0

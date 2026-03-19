@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
@@ -96,8 +96,8 @@ class VehicleTwin(BaseModel):
     relationships: list[Relationship] = Field(default_factory=list)
     calibration_state: CalibrationState | None = None
 
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     def compute_build_hash(self) -> str:
         payload = self.model_dump(exclude={"twin_id", "build_hash", "created_at", "updated_at"})

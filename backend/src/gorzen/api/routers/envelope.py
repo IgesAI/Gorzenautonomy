@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -95,7 +96,7 @@ async def compute_twin_envelope(twin_id: str, request: EnvelopeRequest) -> Envel
     if twin_id not in _twins:
         raise HTTPException(status_code=404, detail="Twin not found")
 
-    twin = _twins[twin_id]
+    twin = copy.deepcopy(_twins[twin_id])
     if request.param_overrides:
         _apply_param_overrides(twin, request.param_overrides)
     return compute_envelope(

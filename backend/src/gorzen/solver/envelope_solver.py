@@ -27,7 +27,7 @@ from gorzen.models.perception.motion_blur import MotionBlurModel
 from gorzen.models.perception.rolling_shutter import RollingShutterModel
 from gorzen.models.propulsion import ESCLossModel, ICEEngineModel, MotorElectricalModel, RotorModel
 from gorzen.schemas.envelope import EnvelopeResponse, EnvelopeSurface
-from gorzen.schemas.parameter import EnvelopeOutput
+from gorzen.schemas.parameter import EnvelopeOutput, SensitivityEntry
 from gorzen.schemas.twin_graph import VehicleTwin
 
 
@@ -325,6 +325,24 @@ def compute_envelope(
                 mission_viable += 1
     mission_success = mission_viable / total if total > 0 else 0.0
 
+    # --- Sensitivity: correlate speed/altitude with identification confidence across grid ---
+    speed_flat = np.tile(speeds, grid_resolution)   # shape: (grid^2,)
+    alt_flat = np.repeat(altitudes, grid_resolution)
+    ident_flat = z_ident.flatten()
+    endurance_flat = z_endurance.flatten()
+
+    sensitivity: list[SensitivityEntry] = []
+    for pname, x, target in [
+        ("airspeed_ms", speed_flat, ident_flat),
+        ("altitude_m", alt_flat, ident_flat),
+        ("airspeed_ms (endurance)", speed_flat, endurance_flat),
+        ("altitude_m (endurance)", alt_flat, endurance_flat),
+    ]:
+        if np.std(x) > 1e-12 and np.std(target) > 1e-12:
+            corr = abs(float(np.corrcoef(x, target)[0, 1]))
+            sensitivity.append(SensitivityEntry(parameter_name=pname, contribution_pct=corr * 100))
+    sensitivity.sort(key=lambda e: e.contribution_pct, reverse=True)
+
     # --- Nominal point outputs (for fuel endurance, safe speed, etc.) ---
     mid_speed = (speed_range[0] + speed_range[1]) / 2
     mid_alt = (altitude_range[0] + altitude_range[1]) / 2
@@ -381,7 +399,7 @@ def compute_envelope(
         battery_reserve=_out(nominal_out.get("endurance_min"), "min"),
         fuel_flow_rate=_out(nominal_out.get("fuel_flow_rate_g_hr"), "g/hr"),
         mission_completion_probability=mission_success,
-        sensitivity=[],
+        sensitivity=sensitivity,
         computation_time_s=time.time() - t0,
         warnings=warnings,
     )

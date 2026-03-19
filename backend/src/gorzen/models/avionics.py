@@ -41,7 +41,6 @@ class AvionicsModel(SubsystemModel):
         ekf_pos = params.get("ekf_position_noise_m", 0.5)
         ekf_vel = params.get("ekf_velocity_noise_ms", 0.1)
         gyro_noise = params.get("imu_gyro_noise_dps", 0.005)
-        params.get("imu_accel_noise_mg", 0.4)
         baro_noise = params.get("baro_noise_m", 1.0)
 
         gps_noise = self.GPS_NOISE.get(gps_type, 2.5)

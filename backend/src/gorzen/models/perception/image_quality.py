@@ -46,7 +46,6 @@ class ImageQualityModel(SubsystemModel):
         lens_mtf = params.get("lens_mtf_nyquist", 0.3)
         pixel_um = params.get("pixel_size_um", 3.3)
         jpeg_q = params.get("jpeg_quality", 90)
-        params.get("encoding_bitrate_mbps", 20.0)
 
         gsd_cm = conditions.get("gsd_cm_px", 1.0)
         blur_px = conditions.get("smear_pixels", 0.0)
