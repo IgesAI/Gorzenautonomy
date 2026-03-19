@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { EnvelopeSurface } from '../../types/envelope';
 import { chartStyles } from '../../theme/chartStyles';
+import { colors } from '../../theme/tokens';
 
 interface IdentConfidenceProps {
   surface?: EnvelopeSurface | null;
@@ -133,7 +134,7 @@ export function IdentConfidence({ surface }: IdentConfidenceProps) {
         )}
 
         {/* Line */}
-        {linePath && <path d={linePath} fill="none" stroke="#2f7fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />}
+        {linePath && <path d={linePath} fill="none" stroke={colors.accent.primary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />}
 
         {/* 80% threshold */}
         <line

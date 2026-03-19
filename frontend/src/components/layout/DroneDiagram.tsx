@@ -106,8 +106,9 @@ export function DroneDiagram({ selected, onSelect, schema }: DroneDiagramProps) 
             onClick={() => onSelect(subsystem)}
             className={clsx(
               'absolute -translate-x-1/2 -translate-y-1/2 z-10',
-              'flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium',
-              'transition-all duration-200 border backdrop-blur-sm',
+              'flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium',
+              'transition-all duration-200 border backdrop-blur-md outline-none',
+              'focus-visible:ring-2 focus-visible:ring-gorzen-500/40',
               isActive
                 ? 'bg-gorzen-500/25 text-gorzen-400 border-gorzen-500/40 shadow-lg shadow-gorzen-500/20'
                 : 'bg-white/5 text-white/80 border-white/15 hover:bg-white/10 hover:border-white/25',
@@ -137,8 +138,9 @@ export function DroneDiagram({ selected, onSelect, schema }: DroneDiagramProps) 
               }
             }}
             className={clsx(
-              'flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium',
-              'transition-all duration-200 border backdrop-blur-sm',
+              'flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium',
+              'transition-all duration-200 border backdrop-blur-md outline-none',
+              'focus-visible:ring-2 focus-visible:ring-gorzen-500/40',
               CORE_HOTSPOT.subsystems.includes(selected)
                 ? 'bg-gorzen-500/25 text-gorzen-400 border-gorzen-500/40 shadow-lg shadow-gorzen-500/20'
                 : 'bg-white/5 text-white/80 border-white/15 hover:bg-white/10 hover:border-white/25',
@@ -157,8 +159,9 @@ export function DroneDiagram({ selected, onSelect, schema }: DroneDiagramProps) 
                 onClick={() => setCoreOpen(false)}
               />
               <div
-                className="absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-30 py-1.5 rounded-lg border border-white/15 bg-slate-900/95 backdrop-blur-xl shadow-xl min-w-[140px]"
+                className="absolute left-1/2 -translate-x-1/2 top-full mt-1.5 z-30 py-1.5 rounded-xl border border-white/12 bg-surface-card backdrop-blur-xl shadow-glass-lg min-w-[140px]"
                 role="menu"
+                aria-label="Core subsystems"
               >
                 {CORE_HOTSPOT.subsystems.map((sub) => {
                   const Icon = CORE_ICONS[sub];
@@ -173,8 +176,9 @@ export function DroneDiagram({ selected, onSelect, schema }: DroneDiagramProps) 
                         setCoreOpen(false);
                       }}
                       className={clsx(
-                        'w-full flex items-center gap-2.5 px-4 py-2 text-sm text-left transition-colors',
-                        isActive ? 'bg-gorzen-500/20 text-gorzen-400' : 'text-white/85 hover:bg-white/10',
+                        'w-full flex items-center gap-2.5 px-4 py-2 text-sm text-left transition-colors outline-none',
+                        'focus-visible:bg-white/10',
+                        isActive ? 'bg-gorzen-500/20 text-gorzen-400' : 'text-white/85 hover:bg-white/[0.06]',
                       )}
                     >
                       {Icon && <Icon size={16} />}

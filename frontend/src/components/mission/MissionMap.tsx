@@ -1,5 +1,6 @@
 import React from 'react';
 import type { MissionPlan } from '../../types/mission';
+import { colors } from '../../theme/tokens';
 
 interface MissionMapProps {
   plan?: MissionPlan | null;
@@ -41,14 +42,14 @@ export function MissionMap({ plan }: MissionMapProps) {
       </h3>
       <svg viewBox="0 0 300 200" className="w-full h-auto">
         <rect x="0" y="0" width="300" height="200" fill="rgba(0,0,0,0.2)" rx="8" />
-        <path d={pathD} fill="none" stroke="#2f7fff" strokeWidth="1.5" opacity="0.7" />
+        <path d={pathD} fill="none" stroke={colors.accent.primary} strokeWidth="1.5" opacity="0.7" />
         {points.map((p, i) => (
           <circle
             key={i}
             cx={p.x}
             cy={p.y}
             r={i === 0 || i === points.length - 1 ? 4 : 2}
-            fill={i === 0 ? '#10b981' : i === points.length - 1 ? '#ef4444' : '#56a4ff'}
+            fill={i === 0 ? colors.status.success : i === points.length - 1 ? colors.status.danger : colors.accent.secondary}
           />
         ))}
       </svg>

@@ -94,7 +94,8 @@ export function AppShell({ schema, schemaLoading, envelope, computing, onCompute
                     key={key}
                     onClick={() => setSelectedSubsystem(key)}
                     className={clsx(
-                      'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-200',
+                      'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-200 outline-none',
+                      'focus-visible:ring-2 focus-visible:ring-gorzen-500/30',
                       isActive
                         ? 'bg-gorzen-500/15 text-gorzen-400 border border-gorzen-500/25 shadow-card'
                         : 'text-white/60 hover:text-white/90 hover:bg-white/[0.06] hover:border-white/10 border border-transparent',

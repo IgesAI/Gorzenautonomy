@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { EnvelopeSurface } from '../../types/envelope';
 import { chartStyles } from '../../theme/chartStyles';
+import { colors } from '../../theme/tokens';
 
 interface EnvelopeChartProps {
   surface?: EnvelopeSurface | null;
@@ -8,7 +9,7 @@ interface EnvelopeChartProps {
 
 function heatColor(feasible: boolean): string {
   if (!feasible) return 'rgba(255,255,255,0.04)';
-  return 'rgba(16,185,129,0.55)';
+  return `${colors.status.success}8c`;
 }
 
 export function EnvelopeChart({ surface }: EnvelopeChartProps) {

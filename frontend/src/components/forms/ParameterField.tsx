@@ -65,9 +65,12 @@ export function ParameterField({ name, param, onChange }: ParameterFieldProps) {
           <button
             type="button"
             aria-label={label}
+            aria-checked={!!param.value}
+            role="switch"
             onClick={() => onChange(name, !param.value)}
             className={clsx(
-              'w-10 h-5 rounded-full transition-all duration-200',
+              'w-10 h-5 rounded-full transition-all duration-200 outline-none',
+              'focus-visible:ring-2 focus-visible:ring-gorzen-500/40 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent',
               param.value ? 'bg-gorzen-500 shadow-md' : 'bg-white/10',
             )}
           >

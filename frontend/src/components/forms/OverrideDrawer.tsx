@@ -23,7 +23,8 @@ export function OverrideDrawer({ title, params, onChange }: OverrideDrawerProps)
     <div className="mt-6 pt-4 border-t border-white/[0.06]">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 text-xs font-medium text-white/45 hover:text-white/70 transition-colors duration-150"
+        aria-expanded={open}
+        className="flex items-center gap-2 text-xs font-medium text-white/45 hover:text-white/70 transition-colors duration-150 outline-none focus-visible:text-white/70"
       >
         {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         {title} ({advancedParams.length} parameters)

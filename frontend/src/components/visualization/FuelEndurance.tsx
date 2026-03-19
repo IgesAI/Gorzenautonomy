@@ -1,6 +1,7 @@
 import React from 'react';
 import type { EnvelopeOutput } from '../../types/envelope';
 import { chartStyles } from '../../theme/chartStyles';
+import { colors } from '../../theme/tokens';
 
 interface FuelEnduranceProps {
   output?: EnvelopeOutput | null;
@@ -8,9 +9,9 @@ interface FuelEnduranceProps {
 }
 
 function getEnduranceColor(hr: number): string {
-  if (hr >= 4) return 'rgba(16,185,129,0.9)';
-  if (hr >= 2) return 'rgba(245,158,11,0.9)';
-  return 'rgba(239,68,68,0.9)';
+  if (hr >= 4) return colors.status.success;
+  if (hr >= 2) return colors.status.warning;
+  return colors.status.danger;
 }
 
 export function FuelEndurance({ output, flowRate }: FuelEnduranceProps) {

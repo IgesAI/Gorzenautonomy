@@ -1,6 +1,7 @@
 import React from 'react';
 import { Target } from 'lucide-react';
 import { chartStyles } from '../../theme/chartStyles';
+import { colors } from '../../theme/tokens';
 
 interface MissionProbProps {
   probability?: number | null;
@@ -15,9 +16,9 @@ function getRiskStyle(p: number): { label: string; color: string; bg: string } {
 }
 
 function getDialColor(p: number): string {
-  if (p >= 0.8) return '#10b981';
-  if (p >= 0.5) return '#f59e0b';
-  return '#ef4444';
+  if (p >= 0.8) return colors.status.success;
+  if (p >= 0.5) return colors.status.warning;
+  return colors.status.danger;
 }
 
 export function MissionProb({ probability, warnings }: MissionProbProps) {

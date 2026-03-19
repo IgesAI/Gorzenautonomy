@@ -1,6 +1,7 @@
 import React from 'react';
 import type { EnvelopeOutput } from '../../types/envelope';
 import { chartStyles } from '../../theme/chartStyles';
+import { colors } from '../../theme/tokens';
 
 interface BatteryReserveProps {
   output?: EnvelopeOutput | null;
@@ -8,9 +9,9 @@ interface BatteryReserveProps {
 
 function getBarColor(mean: number, scaleMax: number): string {
   const ratio = mean / scaleMax;
-  if (ratio >= 0.5) return 'rgba(16,185,129,0.6)';
-  if (ratio >= 0.25) return 'rgba(245,158,11,0.6)';
-  return 'rgba(239,68,68,0.6)';
+  if (ratio >= 0.5) return `${colors.status.success}99`;
+  if (ratio >= 0.25) return `${colors.status.warning}99`;
+  return `${colors.status.danger}99`;
 }
 
 export function BatteryReserve({ output }: BatteryReserveProps) {
