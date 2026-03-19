@@ -88,10 +88,13 @@ export function DroneDiagram({ selected, onSelect, schema }: DroneDiagramProps) 
           style={{ filter: 'brightness(0.55) sepia(1) hue-rotate(190deg) saturate(3)' }}
           draggable={false}
         />
-        {/* Animated blue wave overlay that scrolls across the drone */}
-        <div
-          className="absolute inset-0 pointer-events-none animate-drone-tint"
-          style={{ mixBlendMode: 'lighten' }}
+        {/* Purple-tinted copy of drone, revealed by animated clip-path sweep */}
+        <img
+          src="/wtf.png"
+          alt=""
+          className="absolute inset-0 w-full h-full object-contain select-none pointer-events-none drone-sweep-clip"
+          style={{ filter: 'brightness(0.7) sepia(1) hue-rotate(250deg) saturate(5)' }}
+          draggable={false}
           aria-hidden
         />
       </div>

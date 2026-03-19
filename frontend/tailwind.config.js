@@ -45,25 +45,6 @@ export default {
         'card': '0 2px 12px rgba(0, 0, 0, 0.2)',
         'glow-gorzen': '0 0 20px rgba(47, 127, 255, 0.15)',
       },
-      keyframes: {
-        'drone-tint-wave': {
-          '0%, 100%': {
-            background: 'radial-gradient(ellipse 60% 50% at 50% 25%, rgba(47, 127, 255, 0.30) 0%, rgba(16, 74, 225, 0.12) 40%, transparent 70%)',
-          },
-          '25%': {
-            background: 'radial-gradient(ellipse 60% 50% at 25% 55%, rgba(47, 127, 255, 0.30) 0%, rgba(16, 74, 225, 0.12) 40%, transparent 70%)',
-          },
-          '50%': {
-            background: 'radial-gradient(ellipse 60% 50% at 50% 75%, rgba(47, 127, 255, 0.30) 0%, rgba(16, 74, 225, 0.12) 40%, transparent 70%)',
-          },
-          '75%': {
-            background: 'radial-gradient(ellipse 60% 50% at 75% 45%, rgba(47, 127, 255, 0.30) 0%, rgba(16, 74, 225, 0.12) 40%, transparent 70%)',
-          },
-        },
-      },
-      animation: {
-        'drone-tint': 'drone-tint-wave 8s ease-in-out infinite',
-      },
     },
   },
   plugins: [],
