@@ -29,6 +29,9 @@ jobs:
       - name: Ruff format check
         run: cd backend && ruff format --check src/
 
+      - name: Pyright type check
+        run: cd backend && python -m pyright
+
   security:
     runs-on: ubuntu-latest
     steps:

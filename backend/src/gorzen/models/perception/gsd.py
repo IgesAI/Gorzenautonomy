@@ -1,4 +1,8 @@
-"""GSD computation, altitude band, pixels-on-target, standoff distance."""
+"""GSD computation, altitude band, pixels-on-target, standoff distance.
+
+ODM-aligned formula: GSD = (sensor_width × altitude) / (focal_length × image_width) [cm/px]
+See gorzen.photogrammetry.gsd.calculate_gsd_odm for ODM reference implementation.
+"""
 
 from __future__ import annotations
 

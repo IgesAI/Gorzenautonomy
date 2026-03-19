@@ -70,9 +70,9 @@ def sample_from_spec(
     n: int,
     rng: np.random.Generator | None = None,
 ) -> np.ndarray:
-    """Draw n samples from an UncertaintySpec."""
+    """Draw n samples from an UncertaintySpec. Uses fixed seed when rng is None for determinism."""
     if rng is None:
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(42)
 
     dist = make_scipy_dist(spec)
     samples = dist.rvs(size=n, random_state=rng.integers(0, 2**31))
@@ -92,10 +92,10 @@ def sample_correlated(
 ) -> np.ndarray:
     """Draw correlated samples from multiple specs using Gaussian copula.
 
-    Returns shape (n, len(specs)).
+    Returns shape (n, len(specs)). Uses fixed seed when rng is None for determinism.
     """
     if rng is None:
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(42)
 
     k = len(specs)
     assert correlation_matrix.shape == (k, k)

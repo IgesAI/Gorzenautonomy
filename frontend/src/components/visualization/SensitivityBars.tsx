@@ -13,6 +13,7 @@ const PARAM_LABELS: Record<string, string> = {
   cd0: 'Parasitic drag',
   soh_pct: 'Battery health (SoH)',
   temperature_c: 'Temperature',
+  encoding_bitrate_mbps: 'Encoding bitrate',
   fuel_reserve_pct: 'Fuel reserve',
   exposure_time_s: 'Exposure time',
 };

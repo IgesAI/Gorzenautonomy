@@ -9,24 +9,26 @@ export default function App() {
   const [envelope, setEnvelope] = useState<EnvelopeResponse | null>(null);
   const [computing, setComputing] = useState(false);
 
-  const handleComputeEnvelope = useCallback(async () => {
-    setComputing(true);
-    try {
-      const result = await api.envelope.computeDefault({
-        twin_id: 'default',
-        speed_range_ms: [0.5, 35.0],
-        altitude_range_m: [10.0, 200.0],
-        grid_resolution: 20,
-        uq_method: 'monte_carlo',
-        mc_samples: 300,
-      });
-      setEnvelope(result);
-    } catch (err) {
-      console.error('Envelope computation failed:', err);
-    } finally {
-      setComputing(false);
-    }
-  }, []);
+  const handleComputeEnvelope = useCallback(
+    async (fullParams: Record<string, Record<string, any>> = {}) => {
+      setComputing(true);
+      try {
+        const result = await api.envelope.computeDefault({
+          twin_id: 'default',
+          speed_range_ms: [0.5, 35.0],
+          altitude_range_m: [10.0, 200.0],
+          grid_resolution: 20,
+          param_overrides: fullParams,
+        });
+        setEnvelope(result);
+      } catch (err) {
+        console.error('Envelope computation failed:', err);
+      } finally {
+        setComputing(false);
+      }
+    },
+    []
+  );
 
   return (
     <AppShell

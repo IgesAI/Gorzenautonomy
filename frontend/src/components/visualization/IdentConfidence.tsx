@@ -51,7 +51,7 @@ export function IdentConfidence({ surface }: IdentConfidenceProps) {
           aria-label="Altitude slice"
           value={altIdx}
           onChange={(e) => setSelectedAlt(parseInt(e.target.value))}
-          className="text-[10px] bg-white/5 border border-white/10 rounded-md px-2 py-1 text-white/80 font-mono focus:outline-none focus:ring-1 focus:ring-white/20"
+          className="glass-select-sm"
         >
           {y_values.map((alt, i) => (
             <option key={i} value={i}>

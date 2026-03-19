@@ -36,8 +36,14 @@ export default {
         'glass-heavy': '40px',
       },
       fontFamily: {
-        sans: ['"Inter"', 'system-ui', 'sans-serif'],
-        mono: ['"JetBrains Mono"', 'monospace'],
+        sans: ['"DM Sans"', 'system-ui', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+      },
+      boxShadow: {
+        'glass': '0 4px 24px rgba(0, 0, 0, 0.25), 0 1px 0 rgba(255, 255, 255, 0.04) inset',
+        'glass-lg': '0 12px 40px rgba(0, 0, 0, 0.35), 0 1px 0 rgba(255, 255, 255, 0.06) inset',
+        'card': '0 2px 12px rgba(0, 0, 0, 0.2)',
+        'glow-gorzen': '0 0 20px rgba(47, 127, 255, 0.15)',
       },
     },
   },

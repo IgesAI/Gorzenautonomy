@@ -238,7 +238,6 @@ SEED_AIRFRAMES: list[dict] = [
             "max_operating_temp_c": 49.0,
             "min_operating_temp_c": -29.0,
             "landing_zone_m": 6.1,
-            "crew_size": 2,
         },
     },
     {
@@ -292,7 +291,6 @@ SEED_AIRFRAMES: list[dict] = [
             "max_operating_temp_c": 49.0,
             "min_operating_temp_c": -29.0,
             "landing_zone_m": 7.62,
-            "crew_size": 2,
         },
     },
 ]

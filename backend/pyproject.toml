@@ -16,15 +16,21 @@ dependencies = [
     "alembic>=1.14",
     "asyncpg>=0.30",
     "numpy>=1.26",
+    "pandas>=2.0",
     "scipy>=1.14",
     "casadi>=3.6",
     "scikit-learn>=1.5",
     "pyulog>=1.0",
     "pymavlink>=2.4",
     "websockets>=14.0",
+    "mavsdk>=2.0",
+    "ortools>=9.0",
+    "pint>=0.23",
 ]
 
 [project.optional-dependencies]
+coverage = ["drone-flightplan>=1.0", "geojson>=3.0", "shapely>=2.0", "pyproj>=3.0"]
+odm = ["pyodm>=1.0"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
@@ -32,6 +38,8 @@ dev = [
     "ruff>=0.8",
     "bandit>=1.7",
     "pip-audit>=2.6",
+    "hypothesis>=6.0",
+    "pyright>=1.1",
 ]
 
 [tool.hatch.build.targets.wheel]

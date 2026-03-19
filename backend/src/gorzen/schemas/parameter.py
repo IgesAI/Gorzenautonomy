@@ -119,6 +119,8 @@ def param(
     uncertainty: UncertaintySpec | None = None,
     min_value: float | None = None,
     max_value: float | None = None,
+    step: float | None = None,
+    precision: int | None = None,
     binding: str | None = None,
     advanced: bool = False,
     group: str = "general",
@@ -140,6 +142,8 @@ def param(
             advanced=advanced,
             group=group,
             display_name=display_name,
+            step=step,
+            precision=precision,
         ),
     )
 

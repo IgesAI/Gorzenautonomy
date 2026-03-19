@@ -1,0 +1,3 @@
+# Pinned dependencies for reproducibility.
+# Generate with: cd backend && pip install -e ".[dev]" && pip freeze > requirements-lock.txt
+# Or use: pip install -r requirements-lock.txt (after copying to backend/)

@@ -20,17 +20,17 @@ export function OverrideDrawer({ title, params, onChange }: OverrideDrawerProps)
   if (advancedParams.length === 0) return null;
 
   return (
-    <div className="mt-4 border-t border-white/5 pt-3">
+    <div className="mt-6 pt-4 border-t border-white/[0.06]">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 text-xs font-medium text-white/40 hover:text-white/60 transition-colors"
+        className="flex items-center gap-2 text-xs font-medium text-white/45 hover:text-white/70 transition-colors duration-150"
       >
         {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         {title} ({advancedParams.length} parameters)
       </button>
 
       {open && (
-        <div className="mt-3 space-y-3 pl-2 border-l border-white/5">
+        <div className="mt-4 space-y-4 pl-3 border-l-2 border-gorzen-500/20">
           {advancedParams.map(([name, param]) => (
             <ParameterField key={name} name={name} param={param} onChange={onChange} />
           ))}

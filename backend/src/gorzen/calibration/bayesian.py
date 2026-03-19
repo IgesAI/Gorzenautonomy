@@ -195,13 +195,14 @@ class BayesianCalibrator:
         except np.linalg.LinAlgError:
             cov = np.eye(n_params) * 0.01
 
-        # Draw posterior samples
+        # Draw posterior samples (fixed seed for reproducibility)
+        rng = np.random.default_rng(42)
         try:
             L = np.linalg.cholesky(cov)
-            samples = theta_map + (np.random.randn(self.n_samples, n_params) @ L.T)
+            samples = theta_map + (rng.standard_normal((self.n_samples, n_params)) @ L.T)
         except np.linalg.LinAlgError:
             stds = np.sqrt(np.maximum(np.diag(cov), 1e-8))
-            samples = theta_map + np.random.randn(self.n_samples, n_params) * stds
+            samples = theta_map + rng.standard_normal((self.n_samples, n_params)) * stds
 
         # Build posteriors
         posteriors: dict[str, PosteriorDistribution] = {}

@@ -1,7 +1,7 @@
 """Envelope solver: speed-altitude feasibility, endurance, identification confidence.
 
-Given a twin config + mission + environment + UQ model, computes operating envelope
-surfaces with confidence bands. Supports ICE/hybrid and pure-electric architectures.
+Given a twin config + mission + environment, computes operating envelope surfaces.
+Fully deterministic: uses ONLY user-provided inputs, no random sampling.
 Runs the FULL model chain top-to-bottom for every grid point.
 """
 
@@ -27,9 +27,8 @@ from gorzen.models.perception.motion_blur import MotionBlurModel
 from gorzen.models.perception.rolling_shutter import RollingShutterModel
 from gorzen.models.propulsion import ESCLossModel, ICEEngineModel, MotorElectricalModel, RotorModel
 from gorzen.schemas.envelope import EnvelopeResponse, EnvelopeSurface
-from gorzen.schemas.parameter import UncertaintySpec
+from gorzen.schemas.parameter import EnvelopeOutput
 from gorzen.schemas.twin_graph import VehicleTwin
-from gorzen.uq.propagation import UQInput, UQPropagator
 
 
 KTS_TO_MS = 0.514444
@@ -93,7 +92,6 @@ def _extract_params(twin: VehicleTwin) -> dict[str, float]:
     p["tank_capacity_l"] = fs.tank_capacity_l.value
     p["tank_capacity_kg"] = fs.tank_capacity_kg.value
     p["usable_fuel_pct"] = fs.usable_fuel_pct.value
-    p["fuel_reserve_pct"] = fs.fuel_reserve_pct.value
 
     en = twin.energy
     p["cell_count_s"] = en.cell_count_s.value
@@ -163,6 +161,10 @@ def _extract_params(twin: VehicleTwin) -> dict[str, float]:
 
     mc = twin.mission_profile.constraints
     p["max_blur_px"] = mc.max_blur_px.value
+    p["min_identification_confidence"] = mc.min_identification_confidence.value
+    p["fuel_reserve_pct"] = mc.fuel_reserve_pct.value
+    p["battery_reserve_pct"] = mc.battery_reserve_pct.value
+    p["min_gsd_cm_px"] = mc.min_gsd_cm_px.value
     p["exposure_time_s"] = 1.0 / 2000.0
     p["vibration_blur_px"] = 0.1
     p["esc_resistance_mohm"] = 3.0
@@ -270,9 +272,10 @@ def compute_envelope(
     altitude_range: tuple[float, float] = (10.0, 200.0),
     grid_resolution: int = 20,
     uq_method: str = "monte_carlo",
-    mc_samples: int = 500,
+    mc_samples: int = 1000,
 ) -> EnvelopeResponse:
-    """Compute the full operating envelope. Every grid point runs all 17 models."""
+    """Compute the full operating envelope. Every grid point runs all 17 models.
+    Fully deterministic: same inputs always produce same outputs. No random sampling."""
     t0 = time.time()
     params = _extract_params(twin)
     warnings: list[str] = []
@@ -309,46 +312,29 @@ def compute_envelope(
                 if i == 0 and j == 0:
                     warnings.append(f"Model error at ({spd:.1f} m/s, {alt:.0f} m): {e}")
 
-    # --- Build UQ inputs from twin parameters with real uncertainty ---
+    # --- Mission success: fraction of grid that is feasible AND meets ident constraint ---
+    # Per research brief: "probability-of-success conditioned on environment and constraints"
+    min_ident = params.get("min_identification_confidence", 0.8)
+    mission_viable = 0
+    total = grid_resolution * grid_resolution
+    for i in range(grid_resolution):
+        for j in range(grid_resolution):
+            feasible = z_feasible[i, j] > 0.5
+            ident_ok = z_ident[i, j] >= min_ident
+            if feasible and ident_ok:
+                mission_viable += 1
+    mission_success = mission_viable / total if total > 0 else 0.0
+
+    # --- Nominal point outputs (for fuel endurance, safe speed, etc.) ---
     mid_speed = (speed_range[0] + speed_range[1]) / 2
     mid_alt = (altitude_range[0] + altitude_range[1]) / 2
+    nominal_out = evaluate_point(params, mid_speed, mid_alt)
 
-    uq_inputs = [
-        UQInput("wind_speed_ms", params.get("wind_speed_ms", 5.0),
-                UncertaintySpec(distribution="normal", params={"mean": params.get("wind_speed_ms", 5.0), "std": 1.5})),
-        UQInput("bsfc_cruise_g_kwh", params.get("bsfc_cruise_g_kwh", 500.0),
-                UncertaintySpec(distribution="normal", params={"mean": params.get("bsfc_cruise_g_kwh", 500.0), "std": 25.0})),
-        UQInput("mass_total_kg", params.get("mass_total_kg", 68.0),
-                UncertaintySpec(distribution="normal", params={"mean": params.get("mass_total_kg", 68.0), "std": 1.0})),
-        UQInput("cd0", params.get("cd0", 0.03),
-                UncertaintySpec(distribution="normal", params={"mean": params.get("cd0", 0.03), "std": 0.005})),
-        UQInput("soh_pct", params.get("soh_pct", 100.0),
-                UncertaintySpec(distribution="normal", params={"mean": params.get("soh_pct", 100.0), "std": 3.0})),
-        UQInput("temperature_c", params.get("temperature_c", 20.0),
-                UncertaintySpec(distribution="normal", params={"mean": params.get("temperature_c", 20.0), "std": 5.0})),
-    ]
-
-    def model_at_mid(inp: dict[str, float]) -> dict[str, float]:
-        merged = dict(params)
-        merged.update(inp)
-        return evaluate_point(merged, mid_speed, mid_alt)
-
-    propagator = UQPropagator(method=uq_method, mc_samples=mc_samples)
-    uq_result = propagator.propagate(
-        model_at_mid,
-        uq_inputs,
-        output_names=[
-            "fuel_endurance_hr", "endurance_min", "identification_confidence",
-            "safe_inspection_speed_ms", "fuel_flow_rate_g_hr",
-            "engine_power_required_kw", "total_electrical_power_W",
-        ],
-        constraints={
-            "fuel_endurance_hr": (1.0, ">="),
-            "identification_confidence": (
-                twin.mission_profile.constraints.min_identification_confidence.value, ">="
-            ),
-        },
-    )
+    def _out(mean_val: float | None, unit: str = "") -> EnvelopeOutput | None:
+        if mean_val is None:
+            return None
+        v = float(mean_val)
+        return EnvelopeOutput(mean=v, std=0.0, percentiles={"p5": v, "p50": v, "p95": v}, units=unit or "1")
 
     # --- Build response surfaces ---
     feasibility_surface = EnvelopeSurface(
@@ -390,12 +376,12 @@ def compute_envelope(
         speed_altitude_feasibility=feasibility_surface,
         identification_confidence=ident_surface,
         endurance_surface=endurance_surface,
-        safe_inspection_speed=uq_result.outputs.get("safe_inspection_speed_ms"),
-        fuel_endurance=uq_result.outputs.get("fuel_endurance_hr"),
-        battery_reserve=uq_result.outputs.get("endurance_min"),
-        fuel_flow_rate=uq_result.outputs.get("fuel_flow_rate_g_hr"),
-        mission_completion_probability=uq_result.mission_completion_probability,
-        sensitivity=uq_result.sensitivity,
+        safe_inspection_speed=_out(nominal_out.get("safe_inspection_speed_ms"), "m/s"),
+        fuel_endurance=_out(nominal_out.get("fuel_endurance_hr"), "hr"),
+        battery_reserve=_out(nominal_out.get("endurance_min"), "min"),
+        fuel_flow_rate=_out(nominal_out.get("fuel_flow_rate_g_hr"), "g/hr"),
+        mission_completion_probability=mission_success,
+        sensitivity=[],
         computation_time_s=time.time() - t0,
         warnings=warnings,
     )

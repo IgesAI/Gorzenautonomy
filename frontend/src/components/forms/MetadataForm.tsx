@@ -56,19 +56,19 @@ export function MetadataForm({ subsystem, schema, values, onValueChange }: Metad
 
   return (
     <div>
-      <h2 className="text-lg font-semibold text-white/90 mb-1">
+      <h2 className="text-lg font-semibold text-white/95 mb-1 tracking-tight">
         {schema.label}
       </h2>
-      <p className="text-xs text-white/40 mb-5">
+      <p className="text-xs text-white/45 mb-6 leading-relaxed">
         {schema.description}
       </p>
 
       {Array.from(groups.entries()).map(([group, fields]) => (
-        <div key={group} className="mb-6">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-white/30 mb-3">
+        <div key={group} className="mb-8">
+          <h3 className="text-[11px] font-semibold uppercase tracking-widest text-white/35 mb-3">
             {group.replace(/_/g, ' ')}
           </h3>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+          <div className="grid grid-cols-2 gap-x-5 gap-y-4">
             {fields.map(([name, param]) => (
               <ParameterField
                 key={name}

@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import math
 
-
+from gorzen.solver.coverage import (
+    generate_coverage_waypoints_drone_flightplan,
+    optimize_waypoint_order_ortools,
+)
 from gorzen.schemas.mission import (
     GimbalAction,
     MissionPlan,
@@ -100,12 +103,26 @@ def plan_mission(
         alt = request.target_gsd_cm_px * fl * px_w / (sw * 100.0) * 0.9
         alt = max(alt, 10.0)
 
-    # Generate waypoints
+    # Generate waypoints: prefer drone-flightplan when available, else internal lawnmower
     if request.area_of_interest:
-        wp_coords = generate_survey_waypoints(
-            request.area_of_interest, alt, gsd_params,
-            request.overlap_pct, request.sidelap_pct,
+        df_wp = generate_coverage_waypoints_drone_flightplan(
+            request.area_of_interest,
+            alt,
+            request.target_gsd_cm_px,
+            request.overlap_pct,
+            request.sidelap_pct,
+            take_off=request.area_of_interest[0] if request.area_of_interest else None,
         )
+        if df_wp:
+            wp_coords = [(p[0], p[1]) for p in df_wp]
+            if request.optimize:
+                order = optimize_waypoint_order_ortools(wp_coords, depot=wp_coords[0])
+                wp_coords = [wp_coords[i] for i in order]
+        else:
+            wp_coords = generate_survey_waypoints(
+                request.area_of_interest, alt, gsd_params,
+                request.overlap_pct, request.sidelap_pct,
+            )
     else:
         wp_coords = [(0.0, 0.0), (0.001, 0.0), (0.001, 0.001), (0.0, 0.001)]
 

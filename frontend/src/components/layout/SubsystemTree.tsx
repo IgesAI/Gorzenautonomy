@@ -51,10 +51,10 @@ export function SubsystemTree({ selected, onSelect, schema }: SubsystemTreeProps
             key={key}
             onClick={() => onSelect(key)}
             className={clsx(
-              'w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-150',
+              'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-200',
               isActive
-                ? 'bg-gorzen-500/20 text-gorzen-400 border border-gorzen-500/30'
-                : 'text-white/60 hover:text-white/90 hover:bg-white/5 border border-transparent',
+                ? 'bg-gorzen-500/15 text-gorzen-400 border border-gorzen-500/25 shadow-card'
+                : 'text-white/60 hover:text-white/90 hover:bg-white/[0.06] hover:border-white/10 border border-transparent',
             )}
           >
             <Icon size={16} className={isActive ? 'text-gorzen-400' : 'text-white/40'} />

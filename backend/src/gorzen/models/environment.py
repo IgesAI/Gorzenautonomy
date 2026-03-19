@@ -27,9 +27,10 @@ class DrydenTurbulence:
         self.sigma_v = self.sigma_u
 
     def sample(self, V: float, dt: float, n_steps: int, rng: np.random.Generator | None = None) -> np.ndarray:
-        """Generate turbulence velocity samples [n_steps x 3] (u, v, w components)."""
+        """Generate turbulence velocity samples [n_steps x 3] (u, v, w components).
+        Uses fixed seed when rng is None for deterministic behavior."""
         if rng is None:
-            rng = np.random.default_rng()
+            rng = np.random.default_rng(42)
 
         white = rng.standard_normal((n_steps, 3))
         turb = np.zeros((n_steps, 3))
@@ -65,8 +66,9 @@ class VonKarmanTurbulence:
         self.sigma_u = self.sigma_w / (0.177 + 0.000823 * h) ** 0.4
 
     def sample(self, V: float, dt: float, n_steps: int, rng: np.random.Generator | None = None) -> np.ndarray:
+        """Generate turbulence samples. Uses fixed seed when rng is None for deterministic behavior."""
         if rng is None:
-            rng = np.random.default_rng()
+            rng = np.random.default_rng(42)
         # Approximate Von Karman via filtered noise (similar shape, different spectral roll-off)
         white = rng.standard_normal((n_steps, 3))
         turb = np.zeros((n_steps, 3))

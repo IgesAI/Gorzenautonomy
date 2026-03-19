@@ -63,8 +63,14 @@ pytest -v
 - **Formatting:** `cd backend && ruff format src/`
 - **Security:** `cd backend && bandit -r src/`
 
+## Reproducibility
+
+- **Docker:** `docker build -t gorzen . && docker run -p 8000:8000 gorzen`
+- **Lock file:** For exact dependency versions, run `cd backend && pip install -e ".[dev]" && pip freeze > requirements-lock.txt`
+
 ## Documentation
 
+- [Architecture](docs/ARCHITECTURE.md) – Data flow, model chain, Mermaid diagrams
 - [Formula Audit](docs/FORMULA_AUDIT.md) – Physics formulas, cross-references, corrections
 - [Output Audit](docs/OUTPUT_AUDIT.md) – MCP, UQ, sensitivity, accuracy
 - [Audit Remediation](docs/AUDIT_REMEDIATION.md) – CI, tests, lint fixes

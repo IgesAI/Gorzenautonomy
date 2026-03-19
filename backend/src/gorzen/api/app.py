@@ -33,13 +33,23 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    from gorzen.api.routers import calibration, catalog, envelope, mission, twin
+    from gorzen.api.routers import (
+        calibration,
+        catalog,
+        envelope,
+        execution,
+        mission,
+        twin,
+        validation,
+    )
 
     app.include_router(twin.router, prefix="/twins", tags=["twins"])
     app.include_router(envelope.router, prefix="/twins", tags=["envelope"])
     app.include_router(mission.router, prefix="/twins", tags=["mission"])
+    app.include_router(execution.router, prefix="/execution", tags=["execution"])
     app.include_router(catalog.router, prefix="/catalog", tags=["catalog"])
     app.include_router(calibration.router, prefix="/calibration", tags=["calibration"])
+    app.include_router(validation.router, prefix="/validation", tags=["validation"])
 
     @app.get("/health")
     async def health() -> dict[str, str]:

@@ -34,7 +34,7 @@ export function FuelEndurance({ output, flowRate }: FuelEnduranceProps) {
   return (
     <div>
       <h3 className={`${chartStyles.title} mb-1`}>Fuel Endurance</h3>
-      <p className="text-[9px] text-white/40 mb-3">At nominal operating point (Monte Carlo)</p>
+      <p className="text-[9px] text-white/40 mb-3">At nominal operating point (your inputs)</p>
 
       <div className="flex items-baseline gap-2 mb-3">
         <span className={chartStyles.valuePrimary} style={{ color: getEnduranceColor(output.mean) }}>

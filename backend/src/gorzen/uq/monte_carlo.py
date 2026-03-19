@@ -106,7 +106,7 @@ class MCResult:
 class MonteCarloEngine:
     """Monte Carlo uncertainty propagation engine."""
 
-    def __init__(self, n_samples: int = 1000, seed: int | None = None):
+    def __init__(self, n_samples: int = 1000, seed: int | None = 42):
         self.n_samples = n_samples
         self.rng = np.random.default_rng(seed)
 

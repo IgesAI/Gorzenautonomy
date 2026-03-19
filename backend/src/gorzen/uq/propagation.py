@@ -49,7 +49,7 @@ class UQPropagator:
         method: str = "monte_carlo",
         mc_samples: int = 1000,
         pce_order: int = 3,
-        seed: int | None = None,
+        seed: int | None = 42,
     ):
         self.method = method
         self.mc_samples = mc_samples
