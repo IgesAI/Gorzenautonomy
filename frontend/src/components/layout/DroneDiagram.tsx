@@ -30,15 +30,15 @@ interface CoreHotspotConfig {
 }
 
 const DIAGRAM_HOTSPOTS: HotspotConfig[] = [
-  { left: '50%', top: '88%', subsystem: 'payload', label: 'Payload', Icon: Camera },
-  { left: '50%', top: '38%', subsystem: 'cruise_propulsion', label: 'Cruise', Icon: Navigation },
-  { left: '28%', top: '48%', subsystem: 'lift_propulsion', label: 'VTOL', Icon: Cog },
-  { left: '50%', top: '14%', subsystem: 'mission_profile', label: 'Mission', Icon: Map },
+  { left: '50%', top: '14%', subsystem: 'payload', label: 'Payload', Icon: Camera },
+  { left: '50%', top: '50%', subsystem: 'cruise_propulsion', label: 'Cruise', Icon: Navigation },
+  { left: '72%', top: '38%', subsystem: 'lift_propulsion', label: 'VTOL', Icon: Cog },
+  { left: '28%', top: '38%', subsystem: 'mission_profile', label: 'Mission', Icon: Map },
 ];
 
 const CORE_HOTSPOT: CoreHotspotConfig = {
   left: '50%',
-  top: '58%',
+  top: '42%',
   subsystems: ['energy', 'avionics', 'compute', 'fuel_system'],
   label: 'Core',
   Icon: Battery,
@@ -78,16 +78,20 @@ export function DroneDiagram({ selected, onSelect, schema }: DroneDiagramProps) 
 
   return (
     <div className="relative w-full h-full min-h-[480px] flex items-center justify-center">
-      {/* Drone image - bird's eye, nose bottom, tail top */}
+      {/* Drone image - bird's eye, nose top, tail bottom */}
       <div className="absolute inset-0">
+        {/* Base drone: white wireframe tinted to dark blue via brightness + sepia + hue-rotate */}
         <img
-          src="/drone-birdseye.png"
+          src="/wtf.png"
           alt="VTOL drone bird's eye view"
-          className="absolute inset-0 w-full h-full object-contain select-none pointer-events-none invert"
+          className="absolute inset-0 w-full h-full object-contain select-none pointer-events-none"
+          style={{ filter: 'brightness(0.55) sepia(1) hue-rotate(190deg) saturate(3)' }}
           draggable={false}
         />
+        {/* Animated blue wave overlay that scrolls across the drone */}
         <div
-          className="absolute inset-0 pointer-events-none mix-blend-multiply bg-gorzen-500/50"
+          className="absolute inset-0 pointer-events-none animate-drone-tint"
+          style={{ mixBlendMode: 'lighten' }}
           aria-hidden
         />
       </div>
