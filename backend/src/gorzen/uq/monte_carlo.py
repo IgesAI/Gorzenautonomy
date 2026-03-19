@@ -67,12 +67,38 @@ class MCResult:
         for iname, x in self.input_samples.items():
             if len(x) != len(y):
                 continue
-            corr = np.corrcoef(x, y)[0, 1] if np.std(x) > 1e-12 else 0.0
+            corr = np.corrcoef(x, y)[0, 1] if np.std(x) > 1e-12 and np.std(y) > 1e-12 else 0.0
             entries.append(SensitivityEntry(
                 parameter_name=iname,
                 contribution_pct=abs(corr) * 100,
             ))
 
+        entries.sort(key=lambda e: e.contribution_pct, reverse=True)
+        return entries[:top_k]
+
+    def sensitivity_ranking_mcp(
+        self,
+        constraint_outputs: list[str],
+        top_k: int = 10,
+    ) -> list[SensitivityEntry]:
+        """Rank inputs by max correlation with any constraint output (MCP-relevant)."""
+        if not constraint_outputs:
+            return []
+
+        entries_dict: dict[str, float] = {}
+        for iname, x in self.input_samples.items():
+            max_corr = 0.0
+            for oname in constraint_outputs:
+                y = self.output_samples.get(oname)
+                if y is not None and len(x) == len(y) and np.std(x) > 1e-12 and np.std(y) > 1e-12:
+                    corr = abs(np.corrcoef(x, y)[0, 1])
+                    max_corr = max(max_corr, corr)
+            entries_dict[iname] = max_corr * 100
+
+        entries = [
+            SensitivityEntry(parameter_name=iname, contribution_pct=pct)
+            for iname, pct in entries_dict.items()
+        ]
         entries.sort(key=lambda e: e.contribution_pct, reverse=True)
         return entries[:top_k]
 
@@ -124,9 +150,12 @@ class MonteCarloEngine:
         """Run Monte Carlo propagation through a model function.
 
         model_fn: takes dict of input values, returns dict of output values.
+        Only successful runs are kept; failed runs are dropped to ensure
+        input/output alignment for sensitivity and constraint checks.
         """
         input_samples = self.sample_inputs(inputs, correlation_matrix)
         output_samples: dict[str, list[float]] = {}
+        successful_inputs: dict[str, list[float]] = {name: [] for name in input_samples}
 
         for i in range(self.n_samples):
             input_dict = {name: float(samples[i]) for name, samples in input_samples.items()}
@@ -136,12 +165,20 @@ class MonteCarloEngine:
                     if k not in output_samples:
                         output_samples[k] = []
                     output_samples[k].append(float(v))
+                for name, samples in input_samples.items():
+                    successful_inputs[name].append(float(samples[i]))
             except Exception:
                 continue
 
+        n_success = len(next(iter(output_samples.values()))) if output_samples else 0
+        # When all runs fail, use empty arrays; otherwise filter inputs to successful runs only
+        if n_success == 0:
+            input_arrays = {k: np.array([], dtype=float) for k in input_samples}
+        else:
+            input_arrays = {k: np.array(v) for k, v in successful_inputs.items()}
         result = MCResult(
-            input_samples=input_samples,
+            input_samples=input_arrays,
             output_samples={k: np.array(v) for k, v in output_samples.items()},
-            n_samples=self.n_samples,
+            n_samples=n_success,
         )
         return result

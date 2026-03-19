@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
 
 import numpy as np
 
@@ -75,7 +74,7 @@ class SubsystemModel(ABC):
         if wrt is None:
             wrt = self.parameter_names()
 
-        baseline = self.evaluate(params, conditions)
+        self.evaluate(params, conditions)
         out_names = self.output_names()
         n_out = len(out_names)
         n_in = len(wrt)

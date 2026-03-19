@@ -27,7 +27,7 @@ from gorzen.models.perception.motion_blur import MotionBlurModel
 from gorzen.models.perception.rolling_shutter import RollingShutterModel
 from gorzen.models.propulsion import ESCLossModel, ICEEngineModel, MotorElectricalModel, RotorModel
 from gorzen.schemas.envelope import EnvelopeResponse, EnvelopeSurface
-from gorzen.schemas.parameter import EnvelopeOutput, SensitivityEntry, UncertaintySpec
+from gorzen.schemas.parameter import UncertaintySpec
 from gorzen.schemas.twin_graph import VehicleTwin
 from gorzen.uq.propagation import UQInput, UQPropagator
 
@@ -235,7 +235,7 @@ def evaluate_point(
     e = params.get("oswald_efficiency", 0.8)
     q = 0.5 * rho_est * max(speed_ms, 0.5) ** 2
     CL = W / (q * S + 1e-6) if speed_ms > 2.0 else 0.0
-    Cdi = CL ** 2 / (3.14159 * AR * e + 1e-6) if speed_ms > 2.0 else 0.0
+    Cdi = CL ** 2 / (np.pi * AR * e + 1e-6) if speed_ms > 2.0 else 0.0
     D = q * S * (cd0 + Cdi)
     P_drag_W = D * max(speed_ms, 0.5)
     # Add propulsive efficiency loss (~60% prop efficiency)
@@ -363,6 +363,7 @@ def compute_envelope(
         feasible_mask=[[bool(v > 0.5) for v in row] for row in z_feasible.tolist()],
     )
 
+    # Surfaces use deterministic grid; no UQ per point — z_p5/z_p95 = z_mean
     ident_surface = EnvelopeSurface(
         x_label="Speed (m/s)",
         y_label="Altitude (m)",
@@ -370,8 +371,8 @@ def compute_envelope(
         x_values=speeds.tolist(),
         y_values=altitudes.tolist(),
         z_mean=z_ident.tolist(),
-        z_p5=np.clip(z_ident * 0.85, 0, 1).tolist(),
-        z_p95=np.clip(z_ident * 1.1, 0, 1).tolist(),
+        z_p5=z_ident.tolist(),
+        z_p95=z_ident.tolist(),
     )
 
     endurance_surface = EnvelopeSurface(
@@ -381,8 +382,8 @@ def compute_envelope(
         x_values=speeds.tolist(),
         y_values=altitudes.tolist(),
         z_mean=z_endurance.tolist(),
-        z_p5=(z_endurance * 0.85).tolist(),
-        z_p95=(z_endurance * 1.15).tolist(),
+        z_p5=z_endurance.tolist(),
+        z_p95=z_endurance.tolist(),
     )
 
     response = EnvelopeResponse(

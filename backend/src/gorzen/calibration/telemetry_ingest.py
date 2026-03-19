@@ -5,7 +5,6 @@ Normalizes heterogeneous UAV log formats into a unified time-synced schema.
 
 from __future__ import annotations
 
-import struct
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any

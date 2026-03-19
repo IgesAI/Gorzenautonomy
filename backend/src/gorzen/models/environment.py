@@ -126,10 +126,10 @@ class EnvironmentModel(SubsystemModel):
         gust_factor = GUST_INTENSITY_MAP.get(gust, 1.0)
         turb_intensity = wind_speed * 0.1 * gust_factor
 
-        # ISA with temperature offset
-        isa_temp = 288.15 - 0.0065 * alt
-        temp_ratio = (isa_temp + (temp - 15.0)) / 288.15
-        rho = 1.225 * (pressure / 1013.25) * (288.15 / (isa_temp + 1e-6))
+        # ISA with temperature offset (ideal gas: rho = rho0 * (P/P0) * (T0/T))
+        isa_temp_K = 288.15 - 0.0065 * alt
+        T_actual_K = isa_temp_K + (temp - 15.0)  # non-standard day
+        rho = 1.225 * (pressure / 1013.25) * (288.15 / (T_actual_K + 1e-6))
         temp_at_alt = temp - 0.0065 * alt
 
         return ModelOutput(

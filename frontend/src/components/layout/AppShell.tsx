@@ -91,26 +91,26 @@ export function AppShell({ schema, schemaLoading, envelope, computing, onCompute
       </main>
 
       {/* Right: Visualization */}
-      <aside className="w-[420px] flex-shrink-0 p-3 overflow-y-auto space-y-3">
-        <GlassPanel padding="p-4">
+      <aside className="w-[420px] flex-shrink-0 p-3 overflow-y-auto space-y-4">
+        <GlassPanel padding="p-5">
           <MissionProb
             probability={envelope?.mission_completion_probability}
             warnings={envelope?.warnings}
           />
         </GlassPanel>
-        <GlassPanel padding="p-4">
+        <GlassPanel padding="p-5">
           <EnvelopeChart surface={envelope?.speed_altitude_feasibility} />
         </GlassPanel>
-        <GlassPanel padding="p-4">
+        <GlassPanel padding="p-5">
           <FuelEndurance output={envelope?.fuel_endurance} flowRate={envelope?.fuel_flow_rate} />
         </GlassPanel>
-        <GlassPanel padding="p-4">
+        <GlassPanel padding="p-5">
           <BatteryReserve output={envelope?.battery_reserve} />
         </GlassPanel>
-        <GlassPanel padding="p-4">
+        <GlassPanel padding="p-5">
           <IdentConfidence surface={envelope?.identification_confidence} />
         </GlassPanel>
-        <GlassPanel padding="p-4">
+        <GlassPanel padding="p-5">
           <SensitivityBars entries={envelope?.sensitivity ?? []} />
         </GlassPanel>
       </aside>

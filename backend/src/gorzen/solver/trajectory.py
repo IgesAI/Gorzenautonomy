@@ -87,7 +87,7 @@ class TrajectoryOptimizer:
         for i in range(len(waypoints) - 1):
             d = self._haversine(waypoints[i], waypoints[i + 1])
             distances.append(d)
-        total_dist = sum(distances)
+        sum(distances)
 
         if HAS_CASADI:
             return self._casadi_optimize(

@@ -11,7 +11,6 @@ from typing import Callable
 
 import numpy as np
 
-from gorzen.uq.monte_carlo import MonteCarloEngine
 
 
 @dataclass

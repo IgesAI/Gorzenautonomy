@@ -19,7 +19,7 @@ class RollingShutterModel(SubsystemModel):
     """
 
     def parameter_names(self) -> list[str]:
-        return ["shutter_type", "readout_time_ms", "pixel_height"]
+        return ["shutter_type", "readout_time_ms", "pixel_height", "sensor_height_mm", "focal_length_mm"]
 
     def state_names(self) -> list[str]:
         return []
@@ -34,6 +34,8 @@ class RollingShutterModel(SubsystemModel):
         shutter = str(params.get("shutter_type", "rolling"))
         readout_ms = params.get("readout_time_ms", 30.0)
         px_h = params.get("pixel_height", 3000)
+        sh_mm = params.get("sensor_height_mm", 8.8)
+        fl_mm = params.get("focal_length_mm", 24.0)
 
         v_ground = conditions.get("airspeed_ms", 10.0)
         gsd_m = conditions.get("gsd_cm_px", 1.0) / 100.0
@@ -60,11 +62,11 @@ class RollingShutterModel(SubsystemModel):
         ground_travel_during_readout = v_ground * t_readout
         skew_px = ground_travel_during_readout / (gsd_m + 1e-9)
 
-        # Wobble: from angular velocity during readout
+        # Wobble: angular_rate × readout_time × focal_length_px (per Phase One/Pix4D)
         angular_rate_rps = np.radians(angular_rate_dps)
-        focal_px = px_h  # rough approximation
+        focal_length_px = (fl_mm / (sh_mm + 1e-9)) * px_h if sh_mm > 0 else px_h
         wobble_rad = angular_rate_rps * t_readout
-        wobble_px = wobble_rad * focal_px
+        wobble_px = wobble_rad * focal_length_px
 
         total = np.sqrt(skew_px ** 2 + wobble_px ** 2)
 

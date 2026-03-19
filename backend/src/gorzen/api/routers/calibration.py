@@ -7,7 +7,6 @@ from pydantic import BaseModel
 
 from gorzen.calibration.calibration_missions import (
     ALL_CALIBRATION_MISSIONS,
-    CalibrationMissionDef,
     CalibrationMissionType,
 )
 

@@ -44,7 +44,7 @@ class CommsModel(SubsystemModel):
 
         # Link budget at MANET frequency (~1350 MHz)
         freq_mhz = conditions.get("manet_frequency_mhz", 1350.0)
-        fspl = 20 * np.log10(max(distance_km, 0.01)) + 20 * np.log10(freq_mhz) + 32.44
+        fspl = 20 * np.log10(max(distance_km, 0.01)) + 20 * np.log10(freq_mhz) + 32.45
 
         received_power = tx_power + 2 * ant_gain - fspl
         link_margin = received_power - rx_sens

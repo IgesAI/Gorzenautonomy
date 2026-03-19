@@ -6,7 +6,6 @@ during flight, affecting CG and total vehicle weight dynamically.
 
 from __future__ import annotations
 
-import numpy as np
 
 from gorzen.models.base import ModelOutput, SubsystemModel
 
@@ -57,15 +56,15 @@ class FuelSystemModel(SubsystemModel):
         density = params.get("fuel_density_kg_l", FUEL_DENSITIES.get(fuel_type, 0.81))
         tank_l = params.get("tank_capacity_l", 18.5)
         tank_kg = params.get("tank_capacity_kg", tank_l * density)
-        usable_pct = params.get("usable_fuel_pct", 95.0) / 100.0
+        params.get("usable_fuel_pct", 95.0) / 100.0
         reserve_pct = params.get("fuel_reserve_pct", 15.0) / 100.0
 
         fuel_flow_g_hr = conditions.get("fuel_flow_rate_g_hr", 1000.0)
-        fuel_flow_l_hr = conditions.get("fuel_flow_rate_l_hr", fuel_flow_g_hr / (density * 1000.0))
+        conditions.get("fuel_flow_rate_l_hr", fuel_flow_g_hr / (density * 1000.0))
         elapsed_hr = conditions.get("mission_elapsed_hr", 0.0)
         cruise_speed_kts = conditions.get("cruise_speed_kts", 42.0)
         mass_empty = conditions.get("mass_empty_kg", 34.0)
-        mass_mtow = conditions.get("mass_mtow_kg", 68.0)
+        conditions.get("mass_mtow_kg", 68.0)
         payload_mass = conditions.get("payload_mass_kg", 5.0)
 
         # Fuel burned so far
@@ -149,10 +148,10 @@ class GeneratorModel(SubsystemModel):
     def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:
         gen_cont = params.get("generator_output_w", 200.0)
         gen_int = params.get("generator_output_intermittent_w", 400.0)
-        gen_voltage = params.get("generator_voltage_v", 28.0)
+        params.get("generator_voltage_v", 28.0)
         charge_rate = params.get("generator_charge_rate_w", 200.0)
         has_hybrid = bool(params.get("hybrid_boost_available", 1))
-        hybrid_kw = params.get("hybrid_boost_power_kw", 0.5)
+        params.get("hybrid_boost_power_kw", 0.5)
 
         elec_demand = conditions.get("total_electrical_power_W", 100.0)
         engine_load_pct = conditions.get("throttle_pct", 50.0) / 100.0

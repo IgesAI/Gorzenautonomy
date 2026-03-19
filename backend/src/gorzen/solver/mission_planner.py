@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any
-from uuid import uuid4
 
-import numpy as np
 
 from gorzen.schemas.mission import (
     GimbalAction,
@@ -18,7 +15,7 @@ from gorzen.schemas.mission import (
     WaypointType,
 )
 from gorzen.schemas.twin_graph import VehicleTwin
-from gorzen.solver.envelope_solver import _extract_params, evaluate_point
+from gorzen.solver.envelope_solver import _extract_params
 from gorzen.solver.trajectory import TrajectoryOptimizer
 
 
@@ -118,7 +115,7 @@ def plan_mission(
     tank_kg = params.get("tank_capacity_kg", 15.0)
     fuel_reserve = params.get("fuel_reserve_pct", 15.0) / 100.0
     bsfc = params.get("bsfc_cruise_g_kwh", 500.0)
-    max_power = params.get("max_power_kw", 2.2)
+    params.get("max_power_kw", 2.2)
     usable_fuel_g = tank_kg * 1000.0 * (1.0 - fuel_reserve)
     energy_budget = usable_fuel_g / (bsfc + 1e-6)  # kW-hr available
 

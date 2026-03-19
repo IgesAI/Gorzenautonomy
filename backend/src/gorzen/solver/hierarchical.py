@@ -13,7 +13,6 @@ from typing import Any, Callable
 
 import numpy as np
 
-from gorzen.schemas.parameter import UncertaintySpec
 from gorzen.uq.propagation import UQInput, UQPropagator
 
 

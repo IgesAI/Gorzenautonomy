@@ -109,7 +109,11 @@ class UQPropagator:
                 result.outputs[name] = mc_result.envelope_output(name)
 
         if names:
-            result.sensitivity = mc_result.sensitivity_ranking(names[0])
+            if constraints:
+                constraint_names = list(constraints.keys())
+                result.sensitivity = mc_result.sensitivity_ranking_mcp(constraint_names)
+            else:
+                result.sensitivity = mc_result.sensitivity_ranking(names[0])
 
         # Mission completion probability: all constraints satisfied simultaneously
         if constraints:

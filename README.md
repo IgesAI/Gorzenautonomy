@@ -1,0 +1,74 @@
+# Gorzenautonomy
+
+Digital-Twin Platform for VTOL Fleet Configuration and Perception-Constrained Autonomous Mission Planning.
+
+## Overview
+
+Gorzenautonomy is a physics-based digital twin that models VTOL aircraft (lift+cruise hybrid) for fleet configuration and mission planning. It evaluates operating envelopes (speed–altitude feasibility), fuel endurance, battery reserve, identification confidence, and mission completion probability under uncertainty.
+
+## Architecture
+
+- **Backend** (Python/FastAPI): 17-model chain (environment → airframe → propulsion → fuel/battery → perception → identification), UQ propagation (Monte Carlo, PCE, Unscented Transform), envelope solver
+- **Frontend** (React/Vite/TypeScript): Parameter forms, envelope heatmap, MCP dial, sensitivity bars
+
+## Requirements
+
+- Python 3.11+
+- Node.js 18+ (for frontend)
+
+## Setup
+
+### Backend
+
+```bash
+cd backend
+pip install -e ".[dev]"
+```
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+```
+
+## Running
+
+### Backend API
+
+```bash
+cd backend
+uvicorn gorzen.api.app:create_app --factory --host 0.0.0.0 --port 8000
+```
+
+### Frontend (dev)
+
+```bash
+cd frontend
+npm run dev
+```
+
+The frontend proxies `/api` to `http://localhost:8000`.
+
+## Testing
+
+```bash
+cd backend
+pytest -v
+```
+
+## Code Quality
+
+- **Linting:** `cd backend && ruff check src/`
+- **Formatting:** `cd backend && ruff format src/`
+- **Security:** `cd backend && bandit -r src/`
+
+## Documentation
+
+- [Formula Audit](docs/FORMULA_AUDIT.md) – Physics formulas, cross-references, corrections
+- [Output Audit](docs/OUTPUT_AUDIT.md) – MCP, UQ, sensitivity, accuracy
+- [Audit Remediation](docs/AUDIT_REMEDIATION.md) – CI, tests, lint fixes
+
+## License
+
+MIT – see [LICENSE](LICENSE).

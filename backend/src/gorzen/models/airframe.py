@@ -66,7 +66,10 @@ class AirframeModel(SubsystemModel):
         alt = conditions.get("altitude_m", 50.0)
         alpha_rad = conditions.get("alpha_rad", 0.05)
 
-        rho = isa_density(alt)
+        # Use Environment model's air_density when available (pressure/temp-corrected)
+        rho = conditions.get("air_density_kgm3")
+        if rho is None or rho <= 0:
+            rho = isa_density(alt)
         W = mass * G
         AR = b ** 2 / S if S > 0 else 10.0
 

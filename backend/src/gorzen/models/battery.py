@@ -61,7 +61,7 @@ class BatteryModel(SubsystemModel):
         r1_mohm = params.get("r1_mohm", 5.0)
 
         soc = conditions.get("soc", 0.9)
-        I_draw = conditions.get("total_propulsion_power_W", 200.0)
+        I_draw = conditions.get("total_electrical_power_W", 200.0)
         temp_c = conditions.get("temperature_c", 25.0)
 
         effective_cap = cap_ah * soh * n_p

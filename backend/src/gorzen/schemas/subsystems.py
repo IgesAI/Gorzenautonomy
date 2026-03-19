@@ -8,7 +8,6 @@ Cobra AERO engines and Vertical Autonomy airframes).
 from __future__ import annotations
 
 from enum import Enum
-from typing import Literal
 
 from pydantic import BaseModel, Field
 

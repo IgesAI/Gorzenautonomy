@@ -56,7 +56,7 @@ class ICEEngineModel(SubsystemModel):
         max_rpm = params.get("max_power_rpm", 8350)
         bsfc = params.get("bsfc_cruise_g_kwh", 500.0)
         gen_cont_w = params.get("generator_output_w", 200.0)
-        gen_int_w = params.get("generator_output_intermittent_w", 400.0)
+        params.get("generator_output_intermittent_w", 400.0)
         has_alt_comp = bool(params.get("altitude_compensation", 1))
         has_hybrid = bool(params.get("hybrid_boost_available", 1))
         hybrid_kw = params.get("hybrid_boost_power_kw", 0.5)
@@ -161,7 +161,10 @@ class RotorModel(SubsystemModel):
         thrust_required_N = conditions.get("rotor_lift_required_N", 0.0)
         v_fwd = conditions.get("airspeed_ms", 0.0)
 
-        rho = isa_density(alt)
+        # Use Environment model's air_density when available (pressure/temp-corrected)
+        rho = conditions.get("air_density_kgm3")
+        if rho is None or rho <= 0:
+            rho = isa_density(alt)
         R = D / 2.0
         A_disk = np.pi * R ** 2
 
@@ -229,16 +232,16 @@ class MotorElectricalModel(SubsystemModel):
         else:
             torque_per = 0.01
 
-        I = torque_per / (kt + 1e-9)
+        current_A = torque_per / (kt + 1e-9)
         back_emf = rpm / (kv + 1e-9)
-        V = back_emf + I * R_m
-        P_elec = V * I * n_rotors
+        V = back_emf + current_A * R_m
+        P_elec = V * current_A * n_rotors
         P_mech = conditions.get("rotor_power_total_W", P_elec * 0.85)
         eff = P_mech / (P_elec + 1e-6) if P_elec > 1.0 else 0.0
 
         return ModelOutput(
             values={
-                "motor_current_A": I * n_rotors,
+                "motor_current_A": current_A * n_rotors,
                 "motor_voltage_V": V,
                 "motor_power_elec_W": P_elec,
                 "motor_efficiency": min(eff, 1.0),

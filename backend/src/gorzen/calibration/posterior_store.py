@@ -12,9 +12,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 
-from gorzen.calibration.bayesian import CalibrationResult, GPDiscrepancy, PosteriorDistribution
+from gorzen.calibration.bayesian import CalibrationResult, PosteriorDistribution
 
 
 @dataclass
