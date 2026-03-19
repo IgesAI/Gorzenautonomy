@@ -24,6 +24,8 @@ export const api = {
   envelope: {
     compute: (twinId: string, params: any) =>
       request<any>(`/twins/${twinId}/envelope`, { method: 'POST', body: JSON.stringify(params) }),
+    computeDefault: (params: any) =>
+      request<any>('/twins/default/envelope', { method: 'POST', body: JSON.stringify(params) }),
   },
   mission: {
     plan: (twinId: string, params: any) =>

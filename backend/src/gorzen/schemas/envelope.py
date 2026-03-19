@@ -25,11 +25,11 @@ class EnvelopeRequest(BaseModel):
     """Request body for computing operating envelopes."""
 
     twin_id: str
-    speed_range_ms: tuple[float, float] = (0.0, 40.0)
-    altitude_range_m: tuple[float, float] = (10.0, 150.0)
+    speed_range_ms: tuple[float, float] = (0.0, 35.0)
+    altitude_range_m: tuple[float, float] = (10.0, 200.0)
     grid_resolution: int = 20
     uq_method: str = "monte_carlo"
-    mc_samples: int = 1000
+    mc_samples: int = 500
     include_sensitivity: bool = True
 
 
@@ -38,8 +38,12 @@ class EnvelopeResponse(BaseModel):
 
     speed_altitude_feasibility: EnvelopeSurface | None = None
     safe_inspection_speed: EnvelopeOutput | None = None
+    fuel_endurance: EnvelopeOutput | None = None
     battery_reserve: EnvelopeOutput | None = None
+    fuel_flow_rate: EnvelopeOutput | None = None
     identification_confidence: EnvelopeSurface | None = None
+    endurance_surface: EnvelopeSurface | None = None
     mission_completion_probability: float | None = None
     sensitivity: list[SensitivityEntry] = Field(default_factory=list)
     computation_time_s: float = 0.0
+    warnings: list[str] = Field(default_factory=list)

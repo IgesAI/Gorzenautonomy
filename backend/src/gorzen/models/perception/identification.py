@@ -54,8 +54,10 @@ class IdentificationConfidenceModel(SubsystemModel):
         latency_ms = conditions.get("effective_latency_ms", 30.0)
         image_utility = conditions.get("image_utility_score", 0.7)
 
-        # Blur penalty: combined motion + RS
-        total_blur = np.sqrt(blur_px ** 2 + (rs_distortion * 0.5) ** 2)
+        # Blur penalty: motion blur is primary; RS is geometric (correctable in post)
+        # RS weighted at 1% since it's correctable; cap to avoid dominating at high speed
+        rs_contribution = min(rs_distortion * 0.01, 0.5)
+        total_blur = np.sqrt(blur_px ** 2 + rs_contribution ** 2)
         blur_penalty = min(total_blur * deg_per_blur, 0.5)
 
         # Compression penalty: JPEG quality + bandwidth-limited quality

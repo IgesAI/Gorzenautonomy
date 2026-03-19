@@ -343,7 +343,7 @@ class PayloadConfig(BaseModel):
 
     # Encoding / storage
     codec: TypedParameter = param("h265", "1", group="encoding", display_name="Video Codec")
-    encoding_bitrate_mbps: TypedParameter = param(20.0, "Mbps", min_value=0.1, max_value=200, group="encoding", display_name="Encoding Bitrate")
+    encoding_bitrate_mbps: TypedParameter = param(8.0, "Mbps", min_value=0.1, max_value=200, group="encoding", display_name="Encoding Bitrate")
     jpeg_quality: TypedParameter = param(90, "1", min_value=1, max_value=100, group="encoding", display_name="JPEG Quality")
     onboard_storage_gb: TypedParameter = param(256, "GB", min_value=0, max_value=4096, group="storage", display_name="Onboard Storage")
 
@@ -362,7 +362,7 @@ class AIModelConfig(BaseModel):
     runtime: TypedParameter = param("tensorrt", "1", group="model", display_name="Runtime")
     input_resolution_px: TypedParameter = param(640, "px", min_value=64, max_value=4096, group="model", display_name="Input Resolution")
     accuracy_at_nominal: TypedParameter = param(0.85, "1", min_value=0.0, max_value=1.0, group="performance", display_name="mAP @ Nominal")
-    accuracy_degradation_per_blur_px: TypedParameter = param(0.15, "1/px", min_value=0.0, max_value=1.0, group="performance", display_name="Accuracy Drop per Blur px", advanced=True)
+    accuracy_degradation_per_blur_px: TypedParameter = param(0.07, "1/px", min_value=0.0, max_value=1.0, group="performance", display_name="Accuracy Drop per Blur px", advanced=True)
     accuracy_degradation_per_jpeg_q10: TypedParameter = param(0.05, "1/10q", min_value=0.0, max_value=0.5, group="performance", display_name="Accuracy Drop per JPEG Q/10", advanced=True)
     ood_threshold: TypedParameter = param(0.7, "1", min_value=0.0, max_value=1.0, group="reliability", display_name="OOD Detection Threshold", advanced=True)
 

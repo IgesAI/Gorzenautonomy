@@ -105,7 +105,8 @@ class CompositeModel:
 
     def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:
         combined = ModelOutput()
-        current_conditions = dict(conditions)
+        current_conditions = dict(params)
+        current_conditions.update(conditions)
 
         for model in self.models:
             out = model.evaluate(params, current_conditions)

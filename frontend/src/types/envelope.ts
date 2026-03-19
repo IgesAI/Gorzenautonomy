@@ -28,11 +28,15 @@ export interface EnvelopeSurface {
 export interface EnvelopeResponse {
   speed_altitude_feasibility?: EnvelopeSurface;
   safe_inspection_speed?: EnvelopeOutput;
+  fuel_endurance?: EnvelopeOutput;
   battery_reserve?: EnvelopeOutput;
+  fuel_flow_rate?: EnvelopeOutput;
   identification_confidence?: EnvelopeSurface;
+  endurance_surface?: EnvelopeSurface;
   mission_completion_probability?: number;
   sensitivity: SensitivityEntry[];
   computation_time_s: number;
+  warnings?: string[];
 }
 
 export interface EnvelopeRequest {

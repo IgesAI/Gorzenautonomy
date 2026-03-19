@@ -3,6 +3,7 @@ import { SubsystemTree } from './SubsystemTree';
 import { GlassPanel } from './GlassPanel';
 import { MetadataForm } from '../forms/MetadataForm';
 import { EnvelopeChart } from '../visualization/EnvelopeChart';
+import { FuelEndurance } from '../visualization/FuelEndurance';
 import { BatteryReserve } from '../visualization/BatteryReserve';
 import { MissionProb } from '../visualization/MissionProb';
 import { IdentConfidence } from '../visualization/IdentConfidence';
@@ -14,10 +15,11 @@ interface AppShellProps {
   schema: Record<string, any> | undefined;
   schemaLoading: boolean;
   envelope?: EnvelopeResponse | null;
+  computing?: boolean;
   onComputeEnvelope?: () => void;
 }
 
-export function AppShell({ schema, schemaLoading, envelope, onComputeEnvelope }: AppShellProps) {
+export function AppShell({ schema, schemaLoading, envelope, computing, onComputeEnvelope }: AppShellProps) {
   const [selectedSubsystem, setSelectedSubsystem] = useState<SubsystemType>('airframe');
   const [paramOverrides, setParamOverrides] = useState<Record<string, Record<string, any>>>({});
 
@@ -54,11 +56,18 @@ export function AppShell({ schema, schemaLoading, envelope, onComputeEnvelope }:
           <SubsystemTree selected={selectedSubsystem} onSelect={setSelectedSubsystem} schema={schema} />
           <div className="mt-6 px-2">
             <button
+              type="button"
               onClick={onComputeEnvelope}
-              className="glass-button w-full text-center text-sm"
+              disabled={computing}
+              className="glass-button w-full text-center text-sm disabled:opacity-50"
             >
-              Compute Envelope
+              {computing ? 'Computing...' : 'Compute Envelope'}
             </button>
+            {envelope && (
+              <div className="mt-2 text-[10px] text-white/30 text-center font-mono">
+                {envelope.computation_time_s.toFixed(1)}s
+              </div>
+            )}
           </div>
         </GlassPanel>
       </aside>
@@ -82,12 +91,18 @@ export function AppShell({ schema, schemaLoading, envelope, onComputeEnvelope }:
       </main>
 
       {/* Right: Visualization */}
-      <aside className="w-96 flex-shrink-0 p-3 overflow-y-auto space-y-3">
+      <aside className="w-[420px] flex-shrink-0 p-3 overflow-y-auto space-y-3">
         <GlassPanel padding="p-4">
-          <MissionProb probability={envelope?.mission_completion_probability} />
+          <MissionProb
+            probability={envelope?.mission_completion_probability}
+            warnings={envelope?.warnings}
+          />
         </GlassPanel>
         <GlassPanel padding="p-4">
           <EnvelopeChart surface={envelope?.speed_altitude_feasibility} />
+        </GlassPanel>
+        <GlassPanel padding="p-4">
+          <FuelEndurance output={envelope?.fuel_endurance} flowRate={envelope?.fuel_flow_rate} />
         </GlassPanel>
         <GlassPanel padding="p-4">
           <BatteryReserve output={envelope?.battery_reserve} />

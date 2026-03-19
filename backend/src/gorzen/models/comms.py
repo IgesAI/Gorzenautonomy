@@ -8,12 +8,16 @@ from gorzen.models.base import ModelOutput, SubsystemModel
 
 
 class CommsModel(SubsystemModel):
-    """RF link budget and bandwidth-constrained video quality model."""
+    """RF link budget and bandwidth-constrained video quality model.
+
+    Supports MANET and SATCOM links with separate bandwidth/latency profiles.
+    """
 
     def parameter_names(self) -> list[str]:
         return [
             "tx_power_dbm", "antenna_gain_dbi", "receiver_sensitivity_dbm",
-            "max_range_km", "bandwidth_mbps", "required_latency_ms",
+            "manet_range_nmi", "manet_bandwidth_mbps",
+            "satcom_available", "satcom_bandwidth_mbps",
         ]
 
     def state_names(self) -> list[str]:
@@ -27,35 +31,45 @@ class CommsModel(SubsystemModel):
         ]
 
     def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:
-        tx_power = params.get("tx_power_dbm", 20.0)
-        ant_gain = params.get("antenna_gain_dbi", 2.0)
-        rx_sens = params.get("receiver_sensitivity_dbm", -100.0)
-        max_range = params.get("max_range_km", 5.0)
-        bw = params.get("bandwidth_mbps", 2.0)
-        req_latency = params.get("required_latency_ms", 200.0)
+        tx_power = conditions.get("tx_power_dbm", params.get("tx_power_dbm", 30.0))
+        ant_gain = conditions.get("antenna_gain_dbi", params.get("antenna_gain_dbi", 5.0))
+        rx_sens = conditions.get("receiver_sensitivity_dbm", params.get("receiver_sensitivity_dbm", -100.0))
+        manet_range_nmi = conditions.get("manet_range_nmi", params.get("manet_range_nmi", 75.0))
+        manet_bw = conditions.get("manet_bandwidth_mbps", params.get("manet_bandwidth_mbps", 10.0))
+        satcom = conditions.get("satcom_available", params.get("satcom_available", 1.0))
+        satcom_bw = conditions.get("satcom_bandwidth_mbps", params.get("satcom_bandwidth_mbps", 2.0))
 
-        distance_km = conditions.get("distance_to_gcs_km", 1.0)
-        encoding_bitrate = conditions.get("encoding_bitrate_mbps", 20.0)
+        distance_km = conditions.get("distance_to_gcs_km", 10.0)
+        encoding_bitrate = conditions.get("encoding_bitrate_mbps", params.get("encoding_bitrate_mbps", 8.0))
 
-        # Free-space path loss at 900 MHz
-        freq_mhz = 900.0
-        fspl = 20 * np.log10(distance_km + 1e-6) + 20 * np.log10(freq_mhz) + 32.44
+        # Link budget at MANET frequency (~1350 MHz)
+        freq_mhz = conditions.get("manet_frequency_mhz", 1350.0)
+        fspl = 20 * np.log10(max(distance_km, 0.01)) + 20 * np.log10(freq_mhz) + 32.44
 
         received_power = tx_power + 2 * ant_gain - fspl
         link_margin = received_power - rx_sens
 
-        effective_range = max_range if link_margin > 6.0 else max_range * (link_margin / 6.0)
+        max_range_km = manet_range_nmi * 1.852
+        effective_range = max_range_km if link_margin > 6.0 else max(0, max_range_km * (link_margin / 6.0))
 
-        # Bandwidth constraint on video quality
-        if encoding_bitrate <= bw:
+        # Available bandwidth: use MANET bandwidth, fall back to SATCOM if out of MANET range
+        if distance_km <= max_range_km:
+            available_bw = manet_bw
+        elif satcom > 0.5:
+            available_bw = satcom_bw
+        else:
+            available_bw = 0.1
+
+        # Compression quality: higher bandwidth = less compression needed
+        if encoding_bitrate <= available_bw:
             achievable_bitrate = encoding_bitrate
             quality_factor = 90.0
         else:
-            achievable_bitrate = bw
-            quality_factor = max(10.0, 90.0 * (bw / encoding_bitrate))
+            achievable_bitrate = available_bw
+            quality_factor = max(20.0, 90.0 * (available_bw / encoding_bitrate))
 
-        comms_latency = 20.0 + (distance_km / 300.0) * 1e3 * 0.001  # propagation negligible; processing dominant
-        link_feasible = link_margin > 3.0 and comms_latency < req_latency
+        comms_latency = 20.0 if distance_km <= max_range_km else 600.0
+        link_feasible = link_margin > 3.0
 
         return ModelOutput(
             values={
