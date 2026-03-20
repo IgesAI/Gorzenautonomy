@@ -39,4 +39,21 @@ export const api = {
     status: (twinId: string) => request<any>(`/calibration/${twinId}/status`),
     missions: () => request<any[]>('/calibration/missions'),
   },
+  environment: {
+    solar: (lat: number, lon: number, alt?: number) =>
+      request<any>(`/environment/solar?latitude=${lat}&longitude=${lon}&altitude_m=${alt ?? 0}`),
+    weather: (lat: number, lon: number, elev?: number) =>
+      request<any>(`/environment/weather?latitude=${lat}&longitude=${lon}&elevation_m=${elev ?? 0}`),
+    terrain: (lat: number, lon: number) =>
+      request<any>(`/environment/terrain?latitude=${lat}&longitude=${lon}`),
+    terrainProfile: (points: number[][]) =>
+      request<any>('/environment/terrain/profile', { method: 'POST', body: JSON.stringify({ points }) }),
+    niirs: () => request<any>('/environment/niirs'),
+    niirsLevel: (level: number) => request<any>(`/environment/niirs/${level}`),
+    modelChain: (speed_ms: number, altitude_m: number) =>
+      request<any>('/environment/model-chain', {
+        method: 'POST',
+        body: JSON.stringify({ speed_ms, altitude_m }),
+      }),
+  },
 };

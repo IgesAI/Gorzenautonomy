@@ -20,14 +20,15 @@ class ImageQualityModel(SubsystemModel):
     Simplified for digital-twin use: combines GSD, system MTF, SNR, blur, compression.
     """
 
-    # GIQE 4.0 coefficients (RER >= 0.9) per Leachtenauer et al. 1997 / NGA
-    # NIIRS = c0 + c1*log10(GSD) + c2*log10(RER) + c3*(G/SNR) + c4*H
-    # Reference: "General Image-Quality Equation: GIQE", Appl. Opt. 47(5), 2008
-    GIQE_C0 = 10.251
-    GIQE_C1 = -3.32    # GSD term (inches)
-    GIQE_C2 = 1.559    # RER term (RER >= 0.9 branch)
-    GIQE_C3 = -0.344   # noise gain / SNR term (G/SNR)
-    GIQE_C4 = -0.656   # edge overshoot H (unused: H=0 for unsharpened)
+    # GIQE 5 coefficients — single unified equation (no RER bifurcation)
+    # Reference: Griffith, "Updated GIQE", ASPRS/JACIE 2012-2014; NGA publications
+    # NIIRS = c0 + c1*ln(GSD) + c2*ln(RER) + c3*(G/SNR) + c4*H
+    # Uses natural log (ln) per GIQE 5 formulation
+    GIQE_C0 = 9.57
+    GIQE_C1 = -3.32    # GSD term (inches, natural log)
+    GIQE_C2 = 3.32     # RER term (unified, no bifurcation)
+    GIQE_C3 = -1.9     # noise gain / SNR term (G/SNR)
+    GIQE_C4 = -2.0     # edge overshoot H (refined for sharpening artifacts)
 
     def parameter_names(self) -> list[str]:
         return [
@@ -76,13 +77,13 @@ class ImageQualityModel(SubsystemModel):
 
         effective_mtf = system_mtf * compression_mtf
 
-        # GIQE 4.0: NIIRS = c0 + c1*log10(GSD_in) + c2*log10(RER) + c3*(G/SNR) + c4*H
-        # GSD must be in inches per the GIQE standard; G=1 (no noise gain), H=0 (no sharpening)
+        # GIQE 5: NIIRS = c0 + c1*ln(GSD_in) + c2*ln(RER) + c3*(G/SNR) + c4*H
+        # GSD must be in inches; uses natural log (ln); G=1 (no noise gain), H=0 (no sharpening)
         gsd_inches = (gsd_cm / 2.54)  # cm -> inches
         niirs = (
             self.GIQE_C0
-            + self.GIQE_C1 * np.log10(gsd_inches + 1e-9)
-            + self.GIQE_C2 * np.log10(rer + 1e-9)
+            + self.GIQE_C1 * np.log(gsd_inches + 1e-9)
+            + self.GIQE_C2 * np.log(rer + 1e-9)
             + self.GIQE_C3 * (1.0 / (snr + 1e-6))
         )
         niirs = np.clip(niirs, 0.0, 9.0)
