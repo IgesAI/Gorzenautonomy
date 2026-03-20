@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { GlassPanel } from '../layout/GlassPanel';
 import { chartStyles } from '../../theme/chartStyles';
 import { colors } from '../../theme/tokens';
@@ -39,6 +39,20 @@ interface SolarData {
   illuminance_lux: number;
   solar_noon_utc: string;
   is_daytime: boolean;
+}
+
+export interface EnvironmentSnapshot {
+  temperature_c: number;
+  pressure_hpa: number;
+  wind_speed_ms: number;
+  wind_direction_deg: number;
+  density_altitude_ft: number;
+  ambient_light_lux: number;
+  air_density_kgm3: number;
+}
+
+interface EnvironmentIntelProps {
+  onEnvironmentData?: (snapshot: EnvironmentSnapshot) => void;
 }
 
 const FLIGHT_CAT_COLORS: Record<string, string> = {
@@ -83,7 +97,7 @@ function WindRose({ layer }: { layer: WindLayer }) {
       <div>
         <div className="text-white/90 text-sm font-mono font-bold">{layer.speed_ms.toFixed(1)} m/s</div>
         <div className="text-white/40 text-[10px]">{layer.height_m}m AGL</div>
-        <div className="text-white/30 text-[10px]">{layer.direction_deg.toFixed(0)} gusts {layer.gusts_ms.toFixed(1)}</div>
+        <div className="text-white/30 text-[10px]">{layer.direction_deg.toFixed(0)}° gusts {layer.gusts_ms.toFixed(1)}</div>
       </div>
     </div>
   );
@@ -96,7 +110,6 @@ function SolarArc({ data }: { data: SolarData }) {
   const arcW = w - pad * 2;
   const arcH = h - 20;
 
-  // Sun position on arc (0-24h mapped to arc)
   const now = new Date();
   const hourFrac = now.getUTCHours() + now.getUTCMinutes() / 60;
   const dayFrac = Math.max(0, Math.min(1, (hourFrac - data.sunrise_hour) / (data.sunset_hour - data.sunrise_hour + 0.01)));
@@ -106,14 +119,11 @@ function SolarArc({ data }: { data: SolarData }) {
 
   return (
     <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
-      {/* Horizon line */}
       <line x1={pad} y1={h - 10} x2={w - pad} y2={h - 10} stroke="rgba(255,255,255,0.08)" strokeWidth={1} />
-      {/* Arc path */}
       <path
         d={`M ${pad} ${h - 10} Q ${w / 2} ${10 - arcH * 0.2} ${w - pad} ${h - 10}`}
         fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={1} strokeDasharray="3,3"
       />
-      {/* Sun position */}
       {data.is_daytime && (
         <>
           <circle cx={sunX} cy={sunY} r={10} fill="rgba(251, 191, 36, 0.15)" />
@@ -147,32 +157,74 @@ function MetricCard({ label, value, unit, color }: { label: string; value: strin
   );
 }
 
-export function EnvironmentIntel() {
+export function EnvironmentIntel({ onEnvironmentData }: EnvironmentIntelProps) {
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [solar, setSolar] = useState<SolarData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lat, setLat] = useState(35.0);
   const [lon, setLon] = useState(-106.6);
+  const [geoStatus, setGeoStatus] = useState<'idle' | 'locating' | 'success' | 'denied'>('idle');
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async (fetchLat: number, fetchLon: number) => {
     setLoading(true);
     setError(null);
     try {
       const [w, s] = await Promise.all([
-        api.environment.weather(lat, lon),
-        api.environment.solar(lat, lon),
+        api.environment.weather(fetchLat, fetchLon),
+        api.environment.solar(fetchLat, fetchLon),
       ]);
       setWeather(w);
       setSolar(s);
+
+      // Push environment snapshot to parent for auto-fill
+      if (onEnvironmentData) {
+        const surfaceWind = w.wind_layers?.[0];
+        onEnvironmentData({
+          temperature_c: w.temperature_c,
+          pressure_hpa: w.pressure_hpa,
+          wind_speed_ms: surfaceWind?.speed_ms ?? 0,
+          wind_direction_deg: surfaceWind?.direction_deg ?? 0,
+          density_altitude_ft: w.density_altitude_ft,
+          ambient_light_lux: s.illuminance_lux,
+          air_density_kgm3: w.air_density_kgm3,
+        });
+      }
     } catch (e: any) {
       setError(e.message || 'Failed to fetch environment data');
     } finally {
       setLoading(false);
     }
-  };
+  }, [onEnvironmentData]);
 
-  useEffect(() => { fetchData(); }, []);
+  const requestGeolocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      setGeoStatus('denied');
+      return;
+    }
+    setGeoStatus('locating');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const newLat = Math.round(pos.coords.latitude * 1000) / 1000;
+        const newLon = Math.round(pos.coords.longitude * 1000) / 1000;
+        setLat(newLat);
+        setLon(newLon);
+        setGeoStatus('success');
+        fetchData(newLat, newLon);
+      },
+      () => {
+        setGeoStatus('denied');
+        // Fall back to default location
+        fetchData(lat, lon);
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  }, [fetchData, lat, lon]);
+
+  // On mount: try geolocation, fall back to defaults
+  useEffect(() => {
+    requestGeolocation();
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="h-full overflow-y-auto space-y-3 p-3">
@@ -180,9 +232,23 @@ export function EnvironmentIntel() {
       <GlassPanel padding="p-4">
         <div className="flex items-center justify-between mb-3">
           <h2 className={chartStyles.title}>Environment Intelligence</h2>
-          <button onClick={fetchData} disabled={loading} className="glass-button text-xs py-1.5 px-3 disabled:opacity-50">
-            {loading ? 'Fetching...' : 'Refresh'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={requestGeolocation}
+              disabled={geoStatus === 'locating'}
+              className="glass-button text-xs py-1.5 px-3 disabled:opacity-50"
+              title="Use browser GPS"
+            >
+              {geoStatus === 'locating' ? 'Locating...' : 'GPS'}
+            </button>
+            <button
+              onClick={() => fetchData(lat, lon)}
+              disabled={loading}
+              className="glass-button text-xs py-1.5 px-3 disabled:opacity-50"
+            >
+              {loading ? 'Fetching...' : 'Refresh'}
+            </button>
+          </div>
         </div>
         <div className="flex gap-3">
           <div className="flex-1">
@@ -196,6 +262,17 @@ export function EnvironmentIntel() {
               className="glass-input text-xs" />
           </div>
         </div>
+        {geoStatus === 'success' && (
+          <div className="mt-2 text-[10px] text-gorzen-400 flex items-center gap-1.5">
+            <div className="w-1.5 h-1.5 rounded-full bg-gorzen-400 animate-pulse" />
+            Live GPS position
+          </div>
+        )}
+        {geoStatus === 'denied' && (
+          <div className="mt-2 text-[10px] text-white/35">
+            GPS unavailable — using manual coordinates
+          </div>
+        )}
         {error && <div className="mt-2 text-xs text-red-400">{error}</div>}
       </GlassPanel>
 
@@ -224,10 +301,10 @@ export function EnvironmentIntel() {
           <GlassPanel padding="p-4">
             <h3 className={chartStyles.title}>Atmosphere</h3>
             <div className="grid grid-cols-3 gap-4 mt-3">
-              <MetricCard label="Temperature" value={weather.temperature_c} unit="C" />
+              <MetricCard label="Temperature" value={weather.temperature_c} unit="°C" />
               <MetricCard label="Pressure" value={weather.pressure_hpa} unit="hPa" />
               <MetricCard label="Humidity" value={weather.humidity_pct} unit="%" />
-              <MetricCard label="Air Density" value={weather.air_density_kgm3.toFixed(4)} unit="kg/m3" />
+              <MetricCard label="Air Density" value={weather.air_density_kgm3.toFixed(4)} unit="kg/m³" />
               <MetricCard label="Density Alt" value={weather.density_altitude_ft.toFixed(0)} unit="ft" />
               <MetricCard label="Visibility" value={(weather.visibility_m / 1000).toFixed(1)} unit="km" />
             </div>
@@ -241,7 +318,6 @@ export function EnvironmentIntel() {
                 <WindRose key={layer.height_m} layer={layer} />
               ))}
             </div>
-            {/* Wind speed bar chart */}
             <div className="mt-4 space-y-1.5">
               {weather.wind_layers.map(layer => {
                 const pct = Math.min(100, (layer.speed_ms / 25) * 100);
@@ -271,11 +347,11 @@ export function EnvironmentIntel() {
             <SolarArc data={solar} />
           </div>
           <div className="grid grid-cols-3 gap-4 mt-3">
-            <MetricCard label="Elevation" value={solar.elevation_deg.toFixed(1)} unit="deg" />
-            <MetricCard label="Azimuth" value={solar.azimuth_deg.toFixed(1)} unit="deg" />
+            <MetricCard label="Elevation" value={solar.elevation_deg.toFixed(1)} unit="°" />
+            <MetricCard label="Azimuth" value={solar.azimuth_deg.toFixed(1)} unit="°" />
             <MetricCard label="Day Length" value={solar.day_length_hr.toFixed(1)} unit="hr" />
-            <MetricCard label="GHI" value={solar.ghi_w_m2.toFixed(0)} unit="W/m2" />
-            <MetricCard label="DNI" value={solar.dni_w_m2.toFixed(0)} unit="W/m2" />
+            <MetricCard label="GHI" value={solar.ghi_w_m2.toFixed(0)} unit="W/m²" />
+            <MetricCard label="DNI" value={solar.dni_w_m2.toFixed(0)} unit="W/m²" />
             <MetricCard
               label="Illuminance"
               value={solar.illuminance_lux >= 1000 ? (solar.illuminance_lux / 1000).toFixed(1) + 'k' : solar.illuminance_lux.toFixed(0)}

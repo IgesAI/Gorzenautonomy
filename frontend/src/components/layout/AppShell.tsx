@@ -10,6 +10,7 @@ import { MissionProb } from '../visualization/MissionProb';
 import { IdentConfidence } from '../visualization/IdentConfidence';
 import { SensitivityBars } from '../visualization/SensitivityBars';
 import { EnvironmentIntel } from '../environment/EnvironmentIntel';
+import type { EnvironmentSnapshot } from '../environment/EnvironmentIntel';
 import { ModelPipeline } from '../pipeline/ModelPipeline';
 import { clsx } from 'clsx';
 import type { SubsystemType } from '../../types/twin';
@@ -74,6 +75,21 @@ export function AppShell({ schema, schemaLoading, envelope, computing, onCompute
     }
     return full;
   }, [schema, paramOverrides]);
+
+  const handleEnvironmentData = useCallback((snapshot: EnvironmentSnapshot) => {
+    setParamOverrides((prev) => ({
+      ...prev,
+      mission_profile: {
+        ...(prev['mission_profile'] ?? {}),
+        temperature_c: snapshot.temperature_c,
+        pressure_hpa: snapshot.pressure_hpa,
+        wind_speed_ms: snapshot.wind_speed_ms,
+        wind_direction_deg: snapshot.wind_direction_deg,
+        density_altitude_ft: snapshot.density_altitude_ft,
+        ambient_light_lux: snapshot.ambient_light_lux,
+      },
+    }));
+  }, []);
 
   const labelFor = (sub: SubsystemType) =>
     schema?.subsystems?.[sub]?.label ?? sub.replace(/_/g, ' ');
@@ -204,7 +220,7 @@ export function AppShell({ schema, schemaLoading, envelope, computing, onCompute
         )}
         {viewMode === 'environment' && (
           <GlassPanel className="flex-1 min-h-0 overflow-hidden" padding="p-0">
-            <EnvironmentIntel />
+            <EnvironmentIntel onEnvironmentData={handleEnvironmentData} />
           </GlassPanel>
         )}
         {viewMode === 'pipeline' && (
@@ -245,6 +261,29 @@ export function AppShell({ schema, schemaLoading, envelope, computing, onCompute
                 <p>
                   Solar position computed analytically from lat/lon/time using <span className="text-white/80 font-medium">Meeus algorithms</span>. Clear-sky irradiance via Ineichen-Perez model.
                 </p>
+                <div className="pt-2 border-t border-white/[0.06]">
+                  <h4 className="text-[10px] font-semibold uppercase tracking-wider text-white/35 mb-2">Auto-Filled Parameters</h4>
+                  <div className="space-y-1.5">
+                    {[
+                      { param: 'temperature_c', label: 'Temperature', val: paramOverrides['mission_profile']?.temperature_c },
+                      { param: 'pressure_hpa', label: 'Pressure', val: paramOverrides['mission_profile']?.pressure_hpa },
+                      { param: 'wind_speed_ms', label: 'Wind Speed', val: paramOverrides['mission_profile']?.wind_speed_ms },
+                      { param: 'wind_direction_deg', label: 'Wind Direction', val: paramOverrides['mission_profile']?.wind_direction_deg },
+                      { param: 'density_altitude_ft', label: 'Density Altitude', val: paramOverrides['mission_profile']?.density_altitude_ft },
+                      { param: 'ambient_light_lux', label: 'Ambient Light', val: paramOverrides['mission_profile']?.ambient_light_lux },
+                    ].map(({ label, val }) => (
+                      <div key={label} className="flex items-center justify-between">
+                        <span className="text-white/50">{label}</span>
+                        <span className="font-mono text-gorzen-400 text-[11px]">
+                          {val !== undefined ? (typeof val === 'number' ? val.toFixed(1) : val) : '--'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-2 text-[10px] text-gorzen-400/60">
+                    These values auto-fill the Envelope mission profile from live data.
+                  </div>
+                </div>
                 <div className="pt-2 border-t border-white/[0.06]">
                   <h4 className="text-[10px] font-semibold uppercase tracking-wider text-white/35 mb-2">Data Sources</h4>
                   <div className="space-y-1.5">
