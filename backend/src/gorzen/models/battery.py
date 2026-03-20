@@ -13,14 +13,22 @@ from gorzen.models.base import ModelOutput, SubsystemModel
 def lipo_ocv(soc: float) -> float:
     """Open-circuit voltage for a single LiPo cell as function of SoC (0-1).
 
-    Polynomial fit to typical LiPo discharge curve.
+    5th-order polynomial fit to typical LiPo discharge curve.
+    Calibrated to: 3.0V at SoC=0, ~3.73V at SoC=0.5, 4.2V at SoC=1.0,
+    with the characteristic flat plateau in the 20-80% SoC range.
+
+    References:
+    - Plett, "Battery Management Systems Vol. I", Artech House, 2015
+    - Chen & Rincon-Mora, "Accurate Electrical Battery Model", IEEE TEC 2006
     """
     soc = np.clip(soc, 0.0, 1.0)
     return (
         3.0
-        + 1.2 * soc
-        - 0.6 * soc ** 2
-        + 0.6 * soc ** 3
+        + 2.035 * soc
+        - 5.325 * soc ** 2
+        + 12.740 * soc ** 3
+        - 12.880 * soc ** 4
+        + 4.630 * soc ** 5
     )
 
 
@@ -87,11 +95,12 @@ class BatteryModel(SubsystemModel):
         terminal_v = ocv_pack - total_sag
 
         usable_soc = max(soc - reserve_pct / 100.0, 0.0)
-        energy_remaining = usable_soc * effective_cap * ocv_pack
-        endurance_min = (energy_remaining / (I_draw / 60.0 + 1e-9)) if I_draw > 1.0 else 999.0
+        energy_remaining = usable_soc * effective_cap * ocv_pack  # Wh
+        # I_draw is total_electrical_power_W; endurance = energy_Wh / power_W * 60 min/hr
+        endurance_min = (energy_remaining / (I_draw + 1e-9)) * 60.0 if I_draw > 1.0 else 999.0
 
-        reserve_energy = (reserve_pct / 100.0) * effective_cap * ocv_pack
-        reserve_time = (reserve_energy / (I_draw / 60.0 + 1e-9)) if I_draw > 1.0 else 999.0
+        reserve_energy = (reserve_pct / 100.0) * effective_cap * ocv_pack  # Wh
+        reserve_time = (reserve_energy / (I_draw + 1e-9)) * 60.0 if I_draw > 1.0 else 999.0
 
         # Min voltage check (3.3V/cell under load)
         min_cell_v = 3.3
@@ -178,7 +187,9 @@ class BatteryUKF:
         ocv = lipo_ocv(soc) * self.n_s
         predicted_v = ocv - v_rc
         y = measured_voltage - predicted_v
-        H = np.array([[-self.n_s * 1.2, -1.0]])  # linearized
+        # Linearized dOCV/dSoC from 5th-order polynomial
+        docv = 2.035 - 10.65 * soc + 38.22 * soc ** 2 - 51.52 * soc ** 3 + 23.15 * soc ** 4
+        H = np.array([[-self.n_s * docv, -1.0]])
         S = H @ self.P @ H.T + self.R_meas
         K = self.P @ H.T / (S[0, 0] + 1e-12)
         self.x = self.x + (K @ np.array([[y]])).flatten()

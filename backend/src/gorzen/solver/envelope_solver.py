@@ -228,7 +228,9 @@ def evaluate_point(
     speed_kts = speed_ms / KTS_TO_MS
     # Power demand: P = D * V where D = 0.5 * rho * V^2 * S * Cd_total
     # Cd_total includes induced drag at the required CL
-    rho_est = 1.225
+    # Use ISA density at altitude rather than hardcoded sea-level value
+    T_isa = 288.15 - 0.0065 * altitude_m
+    rho_est = 1.225 * (T_isa / 288.15) ** 4.2561
     S = params.get("wing_area_m2", 1.2)
     cd0 = params.get("cd0", 0.03)
     W = params.get("mass_total_kg", 68.0) * 9.81

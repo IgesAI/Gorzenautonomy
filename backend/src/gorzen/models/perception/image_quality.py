@@ -20,12 +20,14 @@ class ImageQualityModel(SubsystemModel):
     Simplified for digital-twin use: combines GSD, system MTF, SNR, blur, compression.
     """
 
-    # GIQE 4.0 coefficients (RER >= 0.9) per NGA/OPTICS GIQE standard
+    # GIQE 4.0 coefficients (RER >= 0.9) per Leachtenauer et al. 1997 / NGA
+    # NIIRS = c0 + c1*log10(GSD) + c2*log10(RER) + c3*(G/SNR) + c4*H
+    # Reference: "General Image-Quality Equation: GIQE", Appl. Opt. 47(5), 2008
     GIQE_C0 = 10.251
-    GIQE_C1 = -3.32
-    GIQE_C2 = 1.559
-    GIQE_C3 = -0.334
-    GIQE_C4 = -0.656
+    GIQE_C1 = -3.32    # GSD term (inches)
+    GIQE_C2 = 1.559    # RER term (RER >= 0.9 branch)
+    GIQE_C3 = -0.344   # noise gain / SNR term (G/SNR)
+    GIQE_C4 = -0.656   # edge overshoot H (unused: H=0 for unsharpened)
 
     def parameter_names(self) -> list[str]:
         return [
@@ -74,12 +76,12 @@ class ImageQualityModel(SubsystemModel):
 
         effective_mtf = system_mtf * compression_mtf
 
-        # GIQE 4.0: NIIRS = c0 + c1*log10(GSD) + c2*log10(RER) + c3*(G/SNR) + c4*H
-        # Simplified: G=1, H=0; c3*(1/SNR) for SNR term
-        gsd_m = gsd_cm / 100.0
+        # GIQE 4.0: NIIRS = c0 + c1*log10(GSD_in) + c2*log10(RER) + c3*(G/SNR) + c4*H
+        # GSD must be in inches per the GIQE standard; G=1 (no noise gain), H=0 (no sharpening)
+        gsd_inches = (gsd_cm / 2.54)  # cm -> inches
         niirs = (
             self.GIQE_C0
-            + self.GIQE_C1 * np.log10(gsd_m + 1e-9)
+            + self.GIQE_C1 * np.log10(gsd_inches + 1e-9)
             + self.GIQE_C2 * np.log10(rer + 1e-9)
             + self.GIQE_C3 * (1.0 / (snr + 1e-6))
         )
