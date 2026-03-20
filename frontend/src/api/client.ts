@@ -56,4 +56,30 @@ export const api = {
         body: JSON.stringify({ speed_ms, altitude_m }),
       }),
   },
+  telemetry: {
+    connect: (address: string) =>
+      request<any>('/telemetry/connect', { method: 'POST', body: JSON.stringify({ address }) }),
+    disconnect: () =>
+      request<any>('/telemetry/disconnect', { method: 'POST' }),
+    status: () => request<any>('/telemetry/status'),
+    snapshot: () => request<any>('/telemetry/snapshot'),
+    paramMap: () => request<any>('/telemetry/params/map'),
+    twinToPx4: (params: Record<string, Record<string, any>>) =>
+      request<any>('/telemetry/params/to-px4', { method: 'POST', body: JSON.stringify({ params }) }),
+    px4ToTwin: (params: Record<string, any>) =>
+      request<any>('/telemetry/params/from-px4', { method: 'POST', body: JSON.stringify({ params }) }),
+    logTopics: () => request<any>('/telemetry/logs/topics'),
+    uploadLog: (file: File) => {
+      const form = new FormData();
+      form.append('file', file);
+      return fetch(`${API_BASE}/telemetry/logs/upload`, { method: 'POST', body: form })
+        .then(r => { if (!r.ok) throw new Error(`Upload failed: ${r.status}`); return r.json(); });
+    },
+    uploadCalibration: (file: File) => {
+      const form = new FormData();
+      form.append('file', file);
+      return fetch(`${API_BASE}/telemetry/logs/calibration`, { method: 'POST', body: form })
+        .then(r => { if (!r.ok) throw new Error(`Upload failed: ${r.status}`); return r.json(); });
+    },
+  },
 };

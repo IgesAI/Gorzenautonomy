@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { Plane, Map, Cloud, GitBranch } from 'lucide-react';
+import { Plane, Map, Cloud, GitBranch, Radio, FileText } from 'lucide-react';
 import { DroneDiagram } from './DroneDiagram';
 import { GlassPanel } from './GlassPanel';
 import { MetadataForm } from '../forms/MetadataForm';
@@ -12,11 +12,13 @@ import { SensitivityBars } from '../visualization/SensitivityBars';
 import { EnvironmentIntel } from '../environment/EnvironmentIntel';
 import type { EnvironmentSnapshot } from '../environment/EnvironmentIntel';
 import { ModelPipeline } from '../pipeline/ModelPipeline';
+import { LiveTelemetry } from '../telemetry/LiveTelemetry';
+import { FlightLogAnalyzer } from '../telemetry/FlightLogAnalyzer';
 import { clsx } from 'clsx';
 import type { SubsystemType } from '../../types/twin';
 import type { EnvelopeResponse } from '../../types/envelope';
 
-type ViewMode = 'envelope' | 'environment' | 'pipeline';
+type ViewMode = 'envelope' | 'environment' | 'pipeline' | 'telemetry' | 'logs';
 
 interface AppShellProps {
   schema: Record<string, any> | undefined;
@@ -30,8 +32,10 @@ const SIDE_SUBSYSTEMS: SubsystemType[] = ['airframe', 'mission_profile'];
 
 const VIEW_TABS: { key: ViewMode; label: string; Icon: typeof Plane }[] = [
   { key: 'envelope', label: 'Envelope', Icon: Plane },
-  { key: 'environment', label: 'Environment', Icon: Cloud },
+  { key: 'environment', label: 'Environ', Icon: Cloud },
   { key: 'pipeline', label: 'Pipeline', Icon: GitBranch },
+  { key: 'telemetry', label: 'Telemetry', Icon: Radio },
+  { key: 'logs', label: 'Logs', Icon: FileText },
 ];
 
 export function AppShell({ schema, schemaLoading, envelope, computing, onComputeEnvelope }: AppShellProps) {
@@ -228,6 +232,16 @@ export function AppShell({ schema, schemaLoading, envelope, computing, onCompute
             <ModelPipeline />
           </GlassPanel>
         )}
+        {viewMode === 'telemetry' && (
+          <GlassPanel className="flex-1 min-h-0 overflow-hidden" padding="p-0">
+            <LiveTelemetry />
+          </GlassPanel>
+        )}
+        {viewMode === 'logs' && (
+          <GlassPanel className="flex-1 min-h-0 overflow-hidden" padding="p-0">
+            <FlightLogAnalyzer />
+          </GlassPanel>
+        )}
       </main>
 
       {/* Right: Parameter form (only in envelope view) / Info panel for other views */}
@@ -316,6 +330,101 @@ export function AppShell({ schema, schemaLoading, envelope, computing, onCompute
                         <span className="text-white/40">{desc}</span>
                       </div>
                     ))}
+                  </div>
+                </div>
+              </div>
+            </GlassPanel>
+          )}
+          {viewMode === 'telemetry' && (
+            <GlassPanel padding="p-5">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-white/40 mb-4">
+                MAVLink Telemetry
+              </h3>
+              <div className="space-y-3 text-xs text-white/55 leading-relaxed">
+                <p>
+                  Connect to <span className="text-white/80 font-medium">PX4 autopilot</span> via MAVSDK for live telemetry streaming. Supports SITL, serial radios, and WiFi connections.
+                </p>
+                <p>
+                  Telemetry data feeds directly into the digital twin for real-time comparison against model predictions.
+                </p>
+                <div className="pt-2 border-t border-white/[0.06]">
+                  <h4 className="text-[10px] font-semibold uppercase tracking-wider text-white/35 mb-2">Data Channels</h4>
+                  <div className="space-y-1.5">
+                    {[
+                      { color: '#3b82f6', label: 'Position & Attitude', desc: 'GPS, roll/pitch/yaw' },
+                      { color: '#f59e0b', label: 'Battery', desc: 'Voltage, current, SoC' },
+                      { color: '#10b981', label: 'Velocity', desc: 'Ground/airspeed, climb' },
+                      { color: '#ec4899', label: 'Wind Estimate', desc: 'EKF wind speed/direction' },
+                      { color: '#8b5cf6', label: 'Flight Status', desc: 'Mode, armed, health' },
+                    ].map(({ color, label, desc }) => (
+                      <div key={label} className="flex items-start gap-2">
+                        <div className="w-2 h-2 rounded-full mt-1 flex-shrink-0" style={{ backgroundColor: color }} />
+                        <div>
+                          <span className="text-white/70 font-medium">{label}</span>
+                          <span className="text-white/35 ml-1">{desc}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="pt-2 border-t border-white/[0.06]">
+                  <h4 className="text-[10px] font-semibold uppercase tracking-wider text-white/35 mb-2">Connection Types</h4>
+                  <div className="space-y-1 font-mono text-[10px] text-white/40">
+                    <div>PX4 SITL: udp://:14540</div>
+                    <div>Serial Radio: serial:///dev/ttyUSB0:57600</div>
+                    <div>WiFi: udp://192.168.x.x:14550</div>
+                  </div>
+                </div>
+                <div className="pt-2 border-t border-white/[0.06]">
+                  <h4 className="text-[10px] font-semibold uppercase tracking-wider text-white/35 mb-2">PX4 Parameter Sync</h4>
+                  <p className="text-white/40">
+                    Twin parameters map to PX4 params (BAT1_N_CELLS, FW_AIRSPD_MAX, EKF2_GPS_P_NOISE, etc.) for bidirectional configuration sync.
+                  </p>
+                </div>
+              </div>
+            </GlassPanel>
+          )}
+          {viewMode === 'logs' && (
+            <GlassPanel padding="p-5">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-white/40 mb-4">
+                Flight Log Analyzer
+              </h3>
+              <div className="space-y-3 text-xs text-white/55 leading-relaxed">
+                <p>
+                  Upload <span className="text-white/80 font-medium">PX4 uLog</span> (.ulg) flight recordings to extract telemetry data and compare against twin model predictions.
+                </p>
+                <p>
+                  Supports battery analysis, airspeed validation, wind estimation comparison, and actuator output review.
+                </p>
+                <div className="pt-2 border-t border-white/[0.06]">
+                  <h4 className="text-[10px] font-semibold uppercase tracking-wider text-white/35 mb-2">Calibration Topics</h4>
+                  <div className="space-y-1.5">
+                    {[
+                      { color: '#f59e0b', label: 'battery_status', desc: 'Voltage, current, SoC' },
+                      { color: '#3b82f6', label: 'vehicle_attitude', desc: 'Quaternion, angular rates' },
+                      { color: '#10b981', label: 'vehicle_local_position', desc: 'NED position & velocity' },
+                      { color: '#8b5cf6', label: 'airspeed_validated', desc: 'TAS, IAS' },
+                      { color: '#ec4899', label: 'wind_estimate', desc: 'EKF wind N/E components' },
+                      { color: '#14b8a6', label: 'vehicle_air_data', desc: 'Baro altitude, temp, pressure' },
+                    ].map(({ color, label, desc }) => (
+                      <div key={label} className="flex items-start gap-2">
+                        <div className="w-2 h-2 rounded-full mt-1 flex-shrink-0" style={{ backgroundColor: color }} />
+                        <div>
+                          <span className="text-white/70 font-mono font-medium text-[10px]">{label}</span>
+                          <span className="text-white/35 ml-1">{desc}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="pt-2 border-t border-white/[0.06]">
+                  <h4 className="text-[10px] font-semibold uppercase tracking-wider text-white/35 mb-2">Workflow</h4>
+                  <div className="space-y-1 text-white/40">
+                    <div>1. Upload .ulg from PX4 SD card</div>
+                    <div>2. Review flight summary and battery stats</div>
+                    <div>3. Select data channels to visualize</div>
+                    <div>4. Compare against twin predictions</div>
+                    <div>5. Import PX4 params to update twin</div>
                   </div>
                 </div>
               </div>
