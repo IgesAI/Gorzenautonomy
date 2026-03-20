@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState, useRef } from 'react';
 import type { EnvelopeSurface } from '../../types/envelope';
 import { chartStyles } from '../../theme/chartStyles';
 import { colors } from '../../theme/tokens';
@@ -9,16 +9,25 @@ interface EnvelopeChartProps {
 
 function cellColor(feasible: boolean, identConfidence: number): string {
   if (!feasible) return 'rgba(239,68,68,0.15)';
-  // Green gradient based on identification confidence
   if (identConfidence >= 0.9) return 'rgba(16,185,129,0.65)';
   if (identConfidence >= 0.8) return 'rgba(16,185,129,0.45)';
   if (identConfidence >= 0.6) return 'rgba(251,191,36,0.4)';
   return 'rgba(251,191,36,0.25)';
 }
 
+function confidenceLabel(feasible: boolean, val: number): { text: string; color: string } {
+  if (!feasible) return { text: 'Infeasible', color: '#ef4444' };
+  if (val >= 0.9) return { text: 'High Confidence', color: '#10b981' };
+  if (val >= 0.8) return { text: 'Feasible', color: '#34d399' };
+  if (val >= 0.6) return { text: 'Marginal', color: '#fbbf24' };
+  return { text: 'Low Confidence', color: '#f59e0b' };
+}
+
 export function EnvelopeChart({ surface }: EnvelopeChartProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<{
-    x: number; y: number; speed: number; alt: number; feasible: boolean; val: number;
+    xi: number; yi: number; speed: number; alt: number; feasible: boolean; val: number;
+    mouseX: number; mouseY: number;
   } | null>(null);
 
   if (!surface) {
@@ -50,13 +59,39 @@ export function EnvelopeChart({ surface }: EnvelopeChartProps) {
   const totalCount = nx * ny;
   const feasPct = totalCount > 0 ? ((feasibleCount / totalCount) * 100).toFixed(0) : '0';
 
-  // Generate ~5 evenly spaced ticks for each axis
   const xTickStep = Math.max(1, Math.floor(nx / 5));
   const yTickStep = Math.max(1, Math.floor(ny / 5));
   const xTicks = Array.from({ length: Math.ceil(nx / xTickStep) }, (_, i) => Math.min(i * xTickStep, nx - 1));
   if (xTicks[xTicks.length - 1] !== nx - 1) xTicks.push(nx - 1);
   const yTicks = Array.from({ length: Math.ceil(ny / yTickStep) }, (_, i) => Math.min(i * yTickStep, ny - 1));
   if (yTicks[yTicks.length - 1] !== ny - 1) yTicks.push(ny - 1);
+
+  const handleCellHover = (
+    e: React.MouseEvent,
+    xi: number, yi: number, feasible: boolean, val: number,
+  ) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setHover({
+      xi, yi,
+      speed: x_values[xi] ?? 0,
+      alt: y_values[yi] ?? 0,
+      feasible, val,
+      mouseX: e.clientX - rect.left,
+      mouseY: e.clientY - rect.top,
+    });
+  };
+
+  const label = hover ? confidenceLabel(hover.feasible, hover.val) : null;
+
+  // Position tooltip so it doesn't overflow the container
+  const tipW = 180;
+  const tipH = 90;
+  let tipX = (hover?.mouseX ?? 0) + 12;
+  let tipY = (hover?.mouseY ?? 0) - tipH - 8;
+  const containerW = containerRef.current?.clientWidth ?? W;
+  if (tipX + tipW > containerW) tipX = (hover?.mouseX ?? 0) - tipW - 12;
+  if (tipY < 0) tipY = (hover?.mouseY ?? 0) + 16;
 
   return (
     <div>
@@ -67,13 +102,18 @@ export function EnvelopeChart({ surface }: EnvelopeChartProps) {
             {feasPct}% feasible
           </span>
           <span className="text-[10px] font-mono text-white/35">
-            {nx}x{ny} grid
+            {nx}&times;{ny}
           </span>
         </div>
       </div>
 
-      <div className="relative">
-        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ maxHeight: 260 }}>
+      <div className="relative" ref={containerRef}>
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          className="w-full"
+          style={{ maxHeight: 260 }}
+          onMouseLeave={() => setHover(null)}
+        >
           {/* Y-axis label */}
           <text
             x={12} y={pad.top + plotH / 2} textAnchor="middle" fontSize="9"
@@ -119,7 +159,7 @@ export function EnvelopeChart({ surface }: EnvelopeChartProps) {
             Speed (m/s)
           </text>
 
-          {/* Heatmap cells */}
+          {/* Heatmap cells — no gaps, seamless grid */}
           {y_values.map((_, yi) =>
             x_values.map((_, xi) => {
               const feasible = feasible_mask?.[yi]?.[xi] ?? z_mean[yi][xi] > 0.5;
@@ -127,34 +167,50 @@ export function EnvelopeChart({ surface }: EnvelopeChartProps) {
               return (
                 <rect
                   key={`${xi}-${yi}`}
-                  x={pad.left + xi * cellW + 0.5}
-                  y={pad.top + (ny - 1 - yi) * cellH + 0.5}
-                  width={cellW - 0.5}
-                  height={cellH - 0.5}
+                  x={pad.left + xi * cellW}
+                  y={pad.top + (ny - 1 - yi) * cellH}
+                  width={cellW + 0.5}
+                  height={cellH + 0.5}
                   fill={cellColor(!!feasible, val)}
-                  rx={1.5}
-                  className="transition-opacity duration-100"
-                  opacity={hover && (hover.x !== xi || hover.y !== yi) ? 0.7 : 1}
-                  onMouseEnter={() => setHover({ x: xi, y: yi, speed: x_values[xi] ?? 0, alt: y_values[yi] ?? 0, feasible: !!feasible, val })}
-                  onMouseLeave={() => setHover(null)}
+                  onMouseMove={(e) => handleCellHover(e, xi, yi, !!feasible, val)}
                 />
               );
             })
           )}
 
-          {/* Hover highlight */}
+          {/* Hover crosshair */}
           {hover && (
-            <rect
-              x={pad.left + hover.x * cellW}
-              y={pad.top + (ny - 1 - hover.y) * cellH}
-              width={cellW}
-              height={cellH}
-              fill="none"
-              stroke="rgba(255,255,255,0.7)"
-              strokeWidth="1.5"
-              rx={2}
-              pointerEvents="none"
-            />
+            <>
+              {/* Horizontal line */}
+              <line
+                x1={pad.left}
+                y1={pad.top + (ny - 1 - hover.yi) * cellH + cellH / 2}
+                x2={pad.left + plotW}
+                y2={pad.top + (ny - 1 - hover.yi) * cellH + cellH / 2}
+                stroke="rgba(255,255,255,0.25)" strokeWidth="0.5" strokeDasharray="3,3"
+                pointerEvents="none"
+              />
+              {/* Vertical line */}
+              <line
+                x1={pad.left + hover.xi * cellW + cellW / 2}
+                y1={pad.top}
+                x2={pad.left + hover.xi * cellW + cellW / 2}
+                y2={pad.top + plotH}
+                stroke="rgba(255,255,255,0.25)" strokeWidth="0.5" strokeDasharray="3,3"
+                pointerEvents="none"
+              />
+              {/* Cell highlight */}
+              <rect
+                x={pad.left + hover.xi * cellW}
+                y={pad.top + (ny - 1 - hover.yi) * cellH}
+                width={cellW}
+                height={cellH}
+                fill="none"
+                stroke="rgba(255,255,255,0.8)"
+                strokeWidth="1.5"
+                pointerEvents="none"
+              />
+            </>
           )}
 
           {/* Plot border */}
@@ -162,41 +218,44 @@ export function EnvelopeChart({ surface }: EnvelopeChartProps) {
             fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="0.5" />
         </svg>
 
-        {/* Tooltip */}
-        {hover && (
-          <div className="absolute top-3 right-3 bg-black/70 backdrop-blur-md rounded-xl px-3.5 py-2.5 border border-white/10 shadow-lg">
-            <div className="flex items-center gap-2 mb-1.5">
-              <div className={`w-2.5 h-2.5 rounded-full ${hover.feasible ? 'bg-emerald-400' : 'bg-red-400'}`} />
-              <span className="text-xs font-semibold text-white/90">{hover.feasible ? 'Feasible' : 'Infeasible'}</span>
-            </div>
-            <div className="space-y-0.5 text-[11px] font-mono">
-              <div className="text-white/60">Speed: <span className="text-white/90">{hover.speed.toFixed(1)} m/s</span></div>
-              <div className="text-white/60">Altitude: <span className="text-white/90">{hover.alt.toFixed(0)} m</span></div>
+        {/* Tooltip — follows cursor */}
+        {hover && label && (
+          <div
+            className="absolute pointer-events-none z-10"
+            style={{ left: tipX, top: tipY, width: tipW }}
+          >
+            <div className="bg-black/80 backdrop-blur-xl rounded-lg px-3 py-2.5 border border-white/10 shadow-xl">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: label.color }} />
+                <span className="text-[11px] font-semibold" style={{ color: label.color }}>{label.text}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[10px] font-mono">
+                <span className="text-white/40">Speed</span>
+                <span className="text-white/85 text-right">{hover.speed.toFixed(1)} m/s</span>
+                <span className="text-white/40">Altitude</span>
+                <span className="text-white/85 text-right">{hover.alt.toFixed(0)} m</span>
+                <span className="text-white/40">Confidence</span>
+                <span className="text-right" style={{ color: label.color }}>{(hover.val * 100).toFixed(1)}%</span>
+              </div>
             </div>
           </div>
         )}
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-5 mt-3">
-        <div className="flex items-center gap-4 text-[10px] text-white/50">
-          <div className="flex items-center gap-1.5">
-            <div className="w-4 h-3 rounded" style={{ background: 'rgba(16,185,129,0.65)' }} />
-            <span>High confidence</span>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-3">
+        {[
+          { bg: 'rgba(16,185,129,0.65)', label: 'High (>90%)' },
+          { bg: 'rgba(16,185,129,0.45)', label: 'Good (>80%)' },
+          { bg: 'rgba(251,191,36,0.4)', label: 'Marginal (>60%)' },
+          { bg: 'rgba(251,191,36,0.25)', label: 'Low (<60%)' },
+          { bg: 'rgba(239,68,68,0.15)', label: 'Infeasible' },
+        ].map(({ bg, label: l }) => (
+          <div key={l} className="flex items-center gap-1.5 text-[9px] text-white/45">
+            <div className="w-3 h-2.5 rounded-sm" style={{ background: bg }} />
+            <span>{l}</span>
           </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-4 h-3 rounded" style={{ background: 'rgba(16,185,129,0.35)' }} />
-            <span>Feasible</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-4 h-3 rounded" style={{ background: 'rgba(251,191,36,0.35)' }} />
-            <span>Marginal</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-4 h-3 rounded" style={{ background: 'rgba(239,68,68,0.15)' }} />
-            <span>Infeasible</span>
-          </div>
-        </div>
+        ))}
       </div>
     </div>
   );

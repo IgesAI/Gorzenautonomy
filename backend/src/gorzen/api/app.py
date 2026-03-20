@@ -40,6 +40,7 @@ def create_app() -> FastAPI:
         environment,
         execution,
         mission,
+        mission_plan,
         telemetry,
         twin,
         validation,
@@ -54,6 +55,7 @@ def create_app() -> FastAPI:
     app.include_router(validation.router, prefix="/validation", tags=["validation"])
     app.include_router(environment.router, prefix="/environment", tags=["environment"])
     app.include_router(telemetry.router, prefix="/telemetry", tags=["telemetry"])
+    app.include_router(mission_plan.router, prefix="/mission-plan", tags=["mission-plan"])
 
     @app.get("/health")
     async def health() -> dict[str, str]:

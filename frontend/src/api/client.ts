@@ -82,4 +82,21 @@ export const api = {
         .then(r => { if (!r.ok) throw new Error(`Upload failed: ${r.status}`); return r.json(); });
     },
   },
+  missionPlan: {
+    getWaypoints: () => request<any>('/mission-plan/waypoints'),
+    setWaypoints: (waypoints: any[]) =>
+      request<any>('/mission-plan/waypoints', { method: 'POST', body: JSON.stringify({ waypoints }) }),
+    addWaypoint: (wp: any) =>
+      request<any>('/mission-plan/waypoints/add', { method: 'POST', body: JSON.stringify(wp) }),
+    removeWaypoint: (index: number) =>
+      request<any>(`/mission-plan/waypoints/${index}`, { method: 'DELETE' }),
+    clearWaypoints: () =>
+      request<any>('/mission-plan/waypoints', { method: 'DELETE' }),
+    analysis: () => request<any>('/mission-plan/analysis'),
+    geojson: () => request<any>('/mission-plan/geojson'),
+    uploadToDrone: (address: string = 'udp://:14540') =>
+      request<any>('/mission-plan/upload', { method: 'POST', body: JSON.stringify({ address }) }),
+    downloadFromDrone: (address: string = 'udp://:14540') =>
+      request<any>('/mission-plan/download', { method: 'POST', body: JSON.stringify({ address }) }),
+  },
 };

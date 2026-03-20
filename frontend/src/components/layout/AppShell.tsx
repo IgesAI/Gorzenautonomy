@@ -1,5 +1,5 @@
-import React, { useState, useCallback } from 'react';
-import { Plane, Map, Cloud, GitBranch, Radio, FileText } from 'lucide-react';
+import { useState, useCallback } from 'react';
+import { Plane, Map, Cloud, GitBranch, Radio, FileText, Globe } from 'lucide-react';
 import { DroneDiagram } from './DroneDiagram';
 import { GlassPanel } from './GlassPanel';
 import { MetadataForm } from '../forms/MetadataForm';
@@ -14,11 +14,12 @@ import type { EnvironmentSnapshot } from '../environment/EnvironmentIntel';
 import { ModelPipeline } from '../pipeline/ModelPipeline';
 import { LiveTelemetry } from '../telemetry/LiveTelemetry';
 import { FlightLogAnalyzer } from '../telemetry/FlightLogAnalyzer';
+import { MissionPlanner } from '../mission/MissionPlanner';
 import { clsx } from 'clsx';
 import type { SubsystemType } from '../../types/twin';
 import type { EnvelopeResponse } from '../../types/envelope';
 
-type ViewMode = 'envelope' | 'environment' | 'pipeline' | 'telemetry' | 'logs';
+type ViewMode = 'envelope' | 'environment' | 'pipeline' | 'telemetry' | 'logs' | 'mission';
 
 interface AppShellProps {
   schema: Record<string, any> | undefined;
@@ -36,6 +37,7 @@ const VIEW_TABS: { key: ViewMode; label: string; Icon: typeof Plane }[] = [
   { key: 'pipeline', label: 'Pipeline', Icon: GitBranch },
   { key: 'telemetry', label: 'Telemetry', Icon: Radio },
   { key: 'logs', label: 'Logs', Icon: FileText },
+  { key: 'mission', label: 'Mission', Icon: Globe },
 ];
 
 export function AppShell({ schema, schemaLoading, envelope, computing, onComputeEnvelope }: AppShellProps) {
@@ -115,13 +117,13 @@ export function AppShell({ schema, schemaLoading, envelope, computing, onCompute
             </div>
 
             {/* View Mode Tabs */}
-            <div className="flex gap-1 p-1 rounded-xl bg-white/[0.03] mb-4">
+            <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-white/[0.03] mb-4">
               {VIEW_TABS.map(({ key, label, Icon }) => (
                 <button
                   key={key}
                   onClick={() => setViewMode(key)}
                   className={clsx(
-                    'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[11px] font-medium transition-all duration-200 outline-none',
+                    'flex items-center justify-center gap-1.5 py-2 px-1 rounded-lg text-[11px] font-medium transition-all duration-200 outline-none whitespace-nowrap',
                     'focus-visible:ring-2 focus-visible:ring-gorzen-500/30',
                     viewMode === key
                       ? 'bg-gorzen-500/15 text-gorzen-400 shadow-card border border-gorzen-500/20'
@@ -240,6 +242,11 @@ export function AppShell({ schema, schemaLoading, envelope, computing, onCompute
         {viewMode === 'logs' && (
           <GlassPanel className="flex-1 min-h-0 overflow-hidden" padding="p-0">
             <FlightLogAnalyzer />
+          </GlassPanel>
+        )}
+        {viewMode === 'mission' && (
+          <GlassPanel className="flex-1 min-h-0 overflow-hidden" padding="p-0">
+            <MissionPlanner />
           </GlassPanel>
         )}
       </main>
@@ -426,6 +433,56 @@ export function AppShell({ schema, schemaLoading, envelope, computing, onCompute
                     <div>4. Compare against twin predictions</div>
                     <div>5. Import PX4 params to update twin</div>
                   </div>
+                </div>
+              </div>
+            </GlassPanel>
+          )}
+          {viewMode === 'mission' && (
+            <GlassPanel padding="p-5">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-white/40 mb-4">
+                Mission Planner
+              </h3>
+              <div className="space-y-3 text-xs text-white/55 leading-relaxed">
+                <p>
+                  Plan missions on a <span className="text-white/80 font-medium">CesiumJS 3D globe</span> with waypoint management and real-time mission analysis.
+                </p>
+                <p>
+                  Missions sync with the backend and can be uploaded/downloaded to <span className="text-white/80 font-medium">PX4 autopilot</span> via MAVSDK.
+                </p>
+                <div className="pt-2 border-t border-white/[0.06]">
+                  <h4 className="text-[10px] font-semibold uppercase tracking-wider text-white/35 mb-2">Controls</h4>
+                  <div className="space-y-1.5">
+                    {[
+                      { color: '#10b981', label: 'Double-click', desc: 'Add waypoint at location' },
+                      { color: '#ef4444', label: 'Right-click', desc: 'Remove waypoint' },
+                      { color: '#3b82f6', label: 'Scroll', desc: 'Zoom in/out' },
+                      { color: '#f59e0b', label: 'Click + drag', desc: 'Rotate globe' },
+                    ].map(({ color, label, desc }) => (
+                      <div key={label} className="flex items-start gap-2">
+                        <div className="w-2 h-2 rounded-full mt-1 flex-shrink-0" style={{ backgroundColor: color }} />
+                        <div>
+                          <span className="text-white/70 font-medium">{label}</span>
+                          <span className="text-white/35 ml-1">{desc}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="pt-2 border-t border-white/[0.06]">
+                  <h4 className="text-[10px] font-semibold uppercase tracking-wider text-white/35 mb-2">Waypoint Properties</h4>
+                  <div className="space-y-1 font-mono text-[10px] text-white/40">
+                    <div>Altitude (m AGL)</div>
+                    <div>Speed (m/s)</div>
+                    <div>Loiter time (seconds)</div>
+                    <div>Camera action (photo/video)</div>
+                    <div>Gimbal pitch (degrees)</div>
+                  </div>
+                </div>
+                <div className="pt-2 border-t border-white/[0.06]">
+                  <h4 className="text-[10px] font-semibold uppercase tracking-wider text-white/35 mb-2">PX4 Integration</h4>
+                  <p className="text-white/40">
+                    Upload missions to PX4 via MAVSDK MissionPlan API. Supports SITL and hardware connections. Download existing missions from the drone for review.
+                  </p>
                 </div>
               </div>
             </GlassPanel>
