@@ -32,7 +32,12 @@ from gorzen.models.perception.motion_blur import MotionBlurModel
 from gorzen.models.perception.rolling_shutter import RollingShutterModel
 from gorzen.models.propulsion import ESCLossModel, ICEEngineModel, MotorElectricalModel, RotorModel
 from gorzen.schemas.envelope import EnvelopeResponse, EnvelopeSurface
-from gorzen.schemas.parameter import DistributionType, EnvelopeOutput, SensitivityEntry, UncertaintySpec
+from gorzen.schemas.parameter import (
+    DistributionType,
+    EnvelopeOutput,
+    SensitivityEntry,
+    UncertaintySpec,
+)
 from gorzen.schemas.twin_graph import VehicleTwin
 from gorzen.uq.monte_carlo import MCInput, MonteCarloEngine
 
@@ -246,11 +251,11 @@ def evaluate_point(
     cd0 = params.get("cd0", 0.03)
     W = params.get("mass_total_kg", 68.0) * 9.81
     b = params.get("wing_span_m", 4.88)
-    AR = b ** 2 / (S + 1e-6)
+    AR = b**2 / (S + 1e-6)
     e = params.get("oswald_efficiency", 0.8)
     q = 0.5 * rho_est * max(speed_ms, 0.5) ** 2
     CL = W / (q * S + 1e-6) if speed_ms > 2.0 else 0.0
-    Cdi = CL ** 2 / (np.pi * AR * e + 1e-6) if speed_ms > 2.0 else 0.0
+    Cdi = CL**2 / (np.pi * AR * e + 1e-6) if speed_ms > 2.0 else 0.0
     D = q * S * (cd0 + Cdi)
     P_drag_W = D * max(speed_ms, 0.5)
     # Add propulsive efficiency loss (~60% prop efficiency)
@@ -302,7 +307,10 @@ def _build_uncertain_inputs(params: dict[str, float]) -> list[MCInput]:
             nominal=params.get("mass_total_kg", 68.0),
             uncertainty=UncertaintySpec(
                 distribution=DistributionType.NORMAL,
-                params={"mean": params.get("mass_total_kg", 68.0), "std": params.get("mass_total_kg", 68.0) * 0.02},
+                params={
+                    "mean": params.get("mass_total_kg", 68.0),
+                    "std": params.get("mass_total_kg", 68.0) * 0.02,
+                },
             ),
         ),
         MCInput(
@@ -367,11 +375,23 @@ def compute_envelope(
 
     # ── Preflight validation ────────────────────────────────────────────
     _CRITICAL_PARAMS = [
-        "mass_total_kg", "wing_area_m2", "wing_span_m", "cd0",
-        "oswald_efficiency", "max_speed_ms", "sensor_width_mm",
-        "sensor_height_mm", "focal_length_mm", "pixel_width", "pixel_height",
-        "exposure_time_s", "vibration_blur_px", "max_blur_px",
-        "max_power_kw", "bsfc_cruise_g_kwh", "tank_capacity_l",
+        "mass_total_kg",
+        "wing_area_m2",
+        "wing_span_m",
+        "cd0",
+        "oswald_efficiency",
+        "max_speed_ms",
+        "sensor_width_mm",
+        "sensor_height_mm",
+        "focal_length_mm",
+        "pixel_width",
+        "pixel_height",
+        "exposure_time_s",
+        "vibration_blur_px",
+        "max_blur_px",
+        "max_power_kw",
+        "bsfc_cruise_g_kwh",
+        "tank_capacity_l",
         "fuel_density_kg_l",
     ]
     missing_critical = [p for p in _CRITICAL_PARAMS if p not in params or params[p] is None]
@@ -419,14 +439,25 @@ def compute_envelope(
                 ceiling_ok = alt * 3.281 <= params.get("service_ceiling_ft", 99999)
                 gsd_ok = out.get("gsd_cm_px", 0.0) <= params.get("min_gsd_cm_px", 2.0)
 
-                z_feasible[i, j] = float(aero_ok and engine_ok and fuel_ok and blur_ok and batt_ok and ceiling_ok and gsd_ok)
+                z_feasible[i, j] = float(
+                    aero_ok
+                    and engine_ok
+                    and fuel_ok
+                    and blur_ok
+                    and batt_ok
+                    and ceiling_ok
+                    and gsd_ok
+                )
                 z_ident[i, j] = out.get("identification_confidence", 0.0)
                 z_endurance[i, j] = out.get("fuel_endurance_hr", 0.0)
                 z_fuel_flow[i, j] = out.get("fuel_flow_rate_g_hr", 0.0)
                 z_power[i, j] = out.get("engine_power_required_kw", 0.0)
 
                 if run_uq and mc_engine is not None and mc_inputs is not None:
-                    def _model_fn(perturbed: dict[str, float], _s: float = spd, _a: float = alt) -> dict[str, float]:
+
+                    def _model_fn(
+                        perturbed: dict[str, float], _s: float = spd, _a: float = alt
+                    ) -> dict[str, float]:
                         p = dict(params)
                         p.update(perturbed)
                         return evaluate_point(p, _s, _a)
@@ -493,7 +524,9 @@ def compute_envelope(
         if mean_val is None:
             return None
         v = float(mean_val)
-        return EnvelopeOutput(mean=v, std=0.0, percentiles={"p5": v, "p50": v, "p95": v}, units=unit or "1")
+        return EnvelopeOutput(
+            mean=v, std=0.0, percentiles={"p5": v, "p50": v, "p95": v}, units=unit or "1"
+        )
 
     feasibility_surface = EnvelopeSurface(
         x_label="Speed (m/s)",

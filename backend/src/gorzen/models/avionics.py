@@ -23,8 +23,12 @@ class AvionicsModel(SubsystemModel):
 
     def parameter_names(self) -> list[str]:
         return [
-            "gps_type", "ekf_position_noise_m", "ekf_velocity_noise_ms",
-            "imu_gyro_noise_dps", "imu_accel_noise_mg", "baro_noise_m",
+            "gps_type",
+            "ekf_position_noise_m",
+            "ekf_velocity_noise_ms",
+            "imu_gyro_noise_dps",
+            "imu_accel_noise_mg",
+            "baro_noise_m",
         ]
 
     def state_names(self) -> list[str]:
@@ -32,8 +36,10 @@ class AvionicsModel(SubsystemModel):
 
     def output_names(self) -> list[str]:
         return [
-            "position_uncertainty_m", "velocity_uncertainty_ms",
-            "heading_uncertainty_deg", "geotag_error_m",
+            "position_uncertainty_m",
+            "velocity_uncertainty_ms",
+            "heading_uncertainty_deg",
+            "geotag_error_m",
             "altitude_uncertainty_m",
         ]
 
@@ -52,16 +58,16 @@ class AvionicsModel(SubsystemModel):
         gps_noise = self.GPS_NOISE[gps_type]
 
         # Fused position uncertainty (simplified Kalman steady-state)
-        pos_unc = np.sqrt(gps_noise ** 2 + ekf_pos ** 2)
+        pos_unc = np.sqrt(gps_noise**2 + ekf_pos**2)
 
         # Velocity from GPS + IMU integration
-        vel_unc = np.sqrt((gps_noise * 0.1) ** 2 + ekf_vel ** 2)
+        vel_unc = np.sqrt((gps_noise * 0.1) ** 2 + ekf_vel**2)
 
         # Heading uncertainty from gyro integration + magnetometer
         heading_unc = gyro_noise * 10.0 + 0.5  # simplified
 
         # Altitude: baro + GPS fusion
-        alt_unc = np.sqrt(baro_noise ** 2 + (gps_noise * 1.5) ** 2) * 0.5
+        alt_unc = np.sqrt(baro_noise**2 + (gps_noise * 1.5) ** 2) * 0.5
 
         # Geotag error: position + timing + attitude contribution
         v = require_param(conditions, "airspeed_ms", "AvionicsModel")
@@ -70,7 +76,7 @@ class AvionicsModel(SubsystemModel):
         geotag_timing = v * timing_error_s
         alt = require_param(conditions, "altitude_m", "AvionicsModel")
         geotag_attitude = alt * np.radians(heading_unc) * 0.1
-        geotag_error = np.sqrt(geotag_pos ** 2 + geotag_timing ** 2 + geotag_attitude ** 2)
+        geotag_error = np.sqrt(geotag_pos**2 + geotag_timing**2 + geotag_attitude**2)
 
         return ModelOutput(
             values={
@@ -81,8 +87,10 @@ class AvionicsModel(SubsystemModel):
                 "altitude_uncertainty_m": alt_unc,
             },
             units={
-                "position_uncertainty_m": "m", "velocity_uncertainty_ms": "m/s",
-                "heading_uncertainty_deg": "deg", "geotag_error_m": "m",
+                "position_uncertainty_m": "m",
+                "velocity_uncertainty_ms": "m/s",
+                "heading_uncertainty_deg": "deg",
+                "geotag_error_m": "m",
                 "altitude_uncertainty_m": "m",
             },
         )

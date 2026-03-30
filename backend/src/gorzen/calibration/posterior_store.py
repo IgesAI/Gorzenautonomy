@@ -83,15 +83,19 @@ class PosteriorStore:
         version_dir = self.storage_path / key.replace(":", "_")
         version_dir.mkdir(parents=True, exist_ok=True)
         with open(version_dir / f"{version_id}.json", "w") as f:
-            json.dump({
-                "version_id": version_id,
-                "config_hash": result.config_hash,
-                "regime": result.regime,
-                "firmware_version": firmware_version,
-                "n_observations": result.n_observations,
-                "posteriors": posterior_data,
-                "timestamp": version.timestamp.isoformat(),
-            }, f, indent=2)
+            json.dump(
+                {
+                    "version_id": version_id,
+                    "config_hash": result.config_hash,
+                    "regime": result.regime,
+                    "firmware_version": firmware_version,
+                    "n_observations": result.n_observations,
+                    "posteriors": posterior_data,
+                    "timestamp": version.timestamp.isoformat(),
+                },
+                f,
+                indent=2,
+            )
 
         return version
 
@@ -132,12 +136,14 @@ class PosteriorStore:
         for v in versions:
             if parameter_name in v.posteriors:
                 p = v.posteriors[parameter_name]
-                trend.append({
-                    "version_id": v.version_id,
-                    "timestamp": v.timestamp.isoformat(),
-                    "mean": p.mean,
-                    "std": p.std,
-                    "ci_90": p.credible_interval_90,
-                    "n_observations": v.n_observations,
-                })
+                trend.append(
+                    {
+                        "version_id": v.version_id,
+                        "timestamp": v.timestamp.isoformat(),
+                        "mean": p.mean,
+                        "std": p.std,
+                        "ci_90": p.credible_interval_90,
+                        "n_observations": v.n_observations,
+                    }
+                )
         return trend

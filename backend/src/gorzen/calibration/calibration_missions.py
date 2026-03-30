@@ -51,20 +51,26 @@ def hover_power_sweep() -> CalibrationMissionDef:
     """
     steps = []
     for i, throttle_pct in enumerate([50, 60, 70, 80, 90, 100]):
-        steps.append(CalibrationStep(
-            step_id=i,
-            description=f"Hover at {throttle_pct}% throttle for 30s",
-            duration_s=30.0,
-            setpoints={"throttle_pct": throttle_pct, "altitude_m": 10.0},
-            observables=[
-                "battery_voltage_v", "battery_current_a", "motor_rpm",
-                "motor_temperature_c", "altitude_m", "battery_soc_pct",
-            ],
-            acceptance_criteria={
-                "altitude_variance_m": (0.0, 1.0),
-                "wind_speed_ms": (0.0, 3.0),
-            },
-        ))
+        steps.append(
+            CalibrationStep(
+                step_id=i,
+                description=f"Hover at {throttle_pct}% throttle for 30s",
+                duration_s=30.0,
+                setpoints={"throttle_pct": throttle_pct, "altitude_m": 10.0},
+                observables=[
+                    "battery_voltage_v",
+                    "battery_current_a",
+                    "motor_rpm",
+                    "motor_temperature_c",
+                    "altitude_m",
+                    "battery_soc_pct",
+                ],
+                acceptance_criteria={
+                    "altitude_variance_m": (0.0, 1.0),
+                    "wind_speed_ms": (0.0, 3.0),
+                },
+            )
+        )
 
     return CalibrationMissionDef(
         mission_type=CalibrationMissionType.HOVER_POWER_SWEEP,
@@ -73,7 +79,9 @@ def hover_power_sweep() -> CalibrationMissionDef:
         steps=steps,
         required_conditions={"wind": "< 3 m/s", "battery_soc": "> 80%"},
         calibrates_parameters=[
-            "prop_ct_static", "prop_cp_static", "motor_resistance_ohm",
+            "prop_ct_static",
+            "prop_cp_static",
+            "motor_resistance_ohm",
             "internal_resistance_mohm",
         ],
         estimated_duration_min=5.0,
@@ -87,20 +95,26 @@ def forward_flight_speed_sweep() -> CalibrationMissionDef:
     """
     steps = []
     for i, speed in enumerate([5, 8, 12, 16, 20, 25, 30]):
-        steps.append(CalibrationStep(
-            step_id=i,
-            description=f"Cruise at {speed} m/s for 60s",
-            duration_s=60.0,
-            setpoints={"airspeed_ms": speed, "altitude_m": 50.0},
-            observables=[
-                "battery_voltage_v", "battery_current_a", "airspeed_ms",
-                "ground_speed_ms", "wind_speed_ms", "altitude_m",
-            ],
-            acceptance_criteria={
-                "speed_variance_ms": (0.0, 1.0),
-                "altitude_variance_m": (0.0, 2.0),
-            },
-        ))
+        steps.append(
+            CalibrationStep(
+                step_id=i,
+                description=f"Cruise at {speed} m/s for 60s",
+                duration_s=60.0,
+                setpoints={"airspeed_ms": speed, "altitude_m": 50.0},
+                observables=[
+                    "battery_voltage_v",
+                    "battery_current_a",
+                    "airspeed_ms",
+                    "ground_speed_ms",
+                    "wind_speed_ms",
+                    "altitude_m",
+                ],
+                acceptance_criteria={
+                    "speed_variance_ms": (0.0, 1.0),
+                    "altitude_variance_m": (0.0, 2.0),
+                },
+            )
+        )
 
     return CalibrationMissionDef(
         mission_type=CalibrationMissionType.SPEED_SWEEP,
@@ -122,8 +136,10 @@ def latency_test() -> CalibrationMissionDef:
             duration_s=30.0,
             setpoints={"altitude_m": 20.0, "airspeed_ms": 0.0},
             observables=[
-                "capture_timestamp_us", "encode_complete_us",
-                "inference_complete_us", "detection_result",
+                "capture_timestamp_us",
+                "encode_complete_us",
+                "inference_complete_us",
+                "detection_result",
             ],
         ),
         CalibrationStep(
@@ -132,8 +148,10 @@ def latency_test() -> CalibrationMissionDef:
             duration_s=30.0,
             setpoints={"altitude_m": 30.0, "airspeed_ms": 10.0},
             observables=[
-                "capture_timestamp_us", "encode_complete_us",
-                "inference_complete_us", "detection_result",
+                "capture_timestamp_us",
+                "encode_complete_us",
+                "inference_complete_us",
+                "detection_result",
                 "frame_drop_count",
             ],
         ),
@@ -154,16 +172,20 @@ def vibration_characterization() -> CalibrationMissionDef:
     """Vibration characterization: IMU + camera blur proxy."""
     steps = []
     for i, rpm_pct in enumerate([50, 70, 90, 100]):
-        steps.append(CalibrationStep(
-            step_id=i,
-            description=f"Hover at {rpm_pct}% RPM, record IMU + image sharpness",
-            duration_s=20.0,
-            setpoints={"throttle_pct": rpm_pct, "altitude_m": 10.0},
-            observables=[
-                "imu_accel_rms_mg", "imu_gyro_rms_dps",
-                "image_sharpness_score", "vibration_frequency_hz",
-            ],
-        ))
+        steps.append(
+            CalibrationStep(
+                step_id=i,
+                description=f"Hover at {rpm_pct}% RPM, record IMU + image sharpness",
+                duration_s=20.0,
+                setpoints={"throttle_pct": rpm_pct, "altitude_m": 10.0},
+                observables=[
+                    "imu_accel_rms_mg",
+                    "imu_gyro_rms_dps",
+                    "image_sharpness_score",
+                    "vibration_frequency_hz",
+                ],
+            )
+        )
 
     return CalibrationMissionDef(
         mission_type=CalibrationMissionType.VIBRATION_CHARACTERIZATION,
@@ -185,7 +207,8 @@ def rolling_shutter_calibration() -> CalibrationMissionDef:
             duration_s=30.0,
             setpoints={"airspeed_ms": 15.0, "altitude_m": 20.0},
             observables=[
-                "ground_speed_ms", "image_rs_skew_px",
+                "ground_speed_ms",
+                "image_rs_skew_px",
                 "measured_readout_time_ms",
             ],
         ),
@@ -195,7 +218,8 @@ def rolling_shutter_calibration() -> CalibrationMissionDef:
             duration_s=30.0,
             setpoints={"airspeed_ms": 25.0, "altitude_m": 20.0},
             observables=[
-                "ground_speed_ms", "image_rs_skew_px",
+                "ground_speed_ms",
+                "image_rs_skew_px",
                 "measured_readout_time_ms",
             ],
         ),

@@ -121,15 +121,21 @@ def plan_mission(
                 wp_coords = [wp_coords[i] for i in order]
         else:
             clipped_wp = generate_polygon_clipped_lawnmower(
-                request.area_of_interest, alt, gsd_params,
-                request.overlap_pct, request.sidelap_pct,
+                request.area_of_interest,
+                alt,
+                gsd_params,
+                request.overlap_pct,
+                request.sidelap_pct,
             )
             if clipped_wp:
                 wp_coords = [(p[0], p[1]) for p in clipped_wp]
             else:
                 wp_coords = generate_survey_waypoints(
-                    request.area_of_interest, alt, gsd_params,
-                    request.overlap_pct, request.sidelap_pct,
+                    request.area_of_interest,
+                    alt,
+                    gsd_params,
+                    request.overlap_pct,
+                    request.sidelap_pct,
                 )
     else:
         wp_coords = [(0.0, 0.0), (0.001, 0.0), (0.001, 0.001), (0.0, 0.001)]
@@ -164,39 +170,47 @@ def plan_mission(
     payload_actions: list[PayloadAction] = []
 
     # Takeoff
-    waypoints.append(Waypoint(
-        sequence=0,
-        wp_type=WaypointType.TAKEOFF,
-        latitude_deg=wp_coords[0][0],
-        longitude_deg=wp_coords[0][1],
-        altitude_m=alt,
-        speed_ms=2.0,
-    ))
+    waypoints.append(
+        Waypoint(
+            sequence=0,
+            wp_type=WaypointType.TAKEOFF,
+            latitude_deg=wp_coords[0][0],
+            longitude_deg=wp_coords[0][1],
+            altitude_m=alt,
+            speed_ms=2.0,
+        )
+    )
 
     for i, (lat, lon) in enumerate(wp_coords):
         seq = i + 1
-        waypoints.append(Waypoint(
-            sequence=seq,
-            wp_type=WaypointType.PHOTO,
-            latitude_deg=lat,
-            longitude_deg=lon,
-            altitude_m=alt,
-            speed_ms=traj.optimal_speed_ms,
-        ))
-        payload_actions.append(PayloadAction(
-            waypoint_sequence=seq,
-            action_type="photo",
-            gimbal=GimbalAction(pitch_deg=-90.0),
-        ))
+        waypoints.append(
+            Waypoint(
+                sequence=seq,
+                wp_type=WaypointType.PHOTO,
+                latitude_deg=lat,
+                longitude_deg=lon,
+                altitude_m=alt,
+                speed_ms=traj.optimal_speed_ms,
+            )
+        )
+        payload_actions.append(
+            PayloadAction(
+                waypoint_sequence=seq,
+                action_type="photo",
+                gimbal=GimbalAction(pitch_deg=-90.0),
+            )
+        )
 
     # RTL
-    waypoints.append(Waypoint(
-        sequence=len(wp_coords) + 1,
-        wp_type=WaypointType.RETURN_TO_LAUNCH,
-        latitude_deg=wp_coords[0][0],
-        longitude_deg=wp_coords[0][1],
-        altitude_m=alt,
-    ))
+    waypoints.append(
+        Waypoint(
+            sequence=len(wp_coords) + 1,
+            wp_type=WaypointType.RETURN_TO_LAUNCH,
+            latitude_deg=wp_coords[0][0],
+            longitude_deg=wp_coords[0][1],
+            altitude_m=alt,
+        )
+    )
 
     # Build MAVLink items
     mavlink_items = _build_mavlink_items(waypoints, payload_actions)
@@ -300,13 +314,20 @@ def _build_mavlink_items(
     # Add camera trigger commands for photo waypoints
     photo_seqs = {pa.waypoint_sequence for pa in payload_actions if pa.action_type == "photo"}
     for seq in sorted(photo_seqs):
-        items.append({
-            "seq": 1000 + seq,
-            "frame": 2,
-            "command": 203,  # MAV_CMD_DO_DIGICAM_CONTROL
-            "param1": 0, "param2": 0, "param3": 0, "param4": 0,
-            "param5": 1,  # trigger
-            "x": 0, "y": 0, "z": 0,
-        })
+        items.append(
+            {
+                "seq": 1000 + seq,
+                "frame": 2,
+                "command": 203,  # MAV_CMD_DO_DIGICAM_CONTROL
+                "param1": 0,
+                "param2": 0,
+                "param3": 0,
+                "param4": 0,
+                "param5": 1,  # trigger
+                "x": 0,
+                "y": 0,
+                "z": 0,
+            }
+        )
 
     return items

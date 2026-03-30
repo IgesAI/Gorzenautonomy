@@ -66,8 +66,15 @@ async def update_telemetry_log(
     if row is None:
         return None
     allowed = {
-        "twin_id", "source_format", "vehicle_id", "firmware_version",
-        "file_path", "file_size_bytes", "record_count", "topics", "log_metadata",
+        "twin_id",
+        "source_format",
+        "vehicle_id",
+        "firmware_version",
+        "file_path",
+        "file_size_bytes",
+        "record_count",
+        "topics",
+        "log_metadata",
     }
     for key, value in fields.items():
         if key in allowed:

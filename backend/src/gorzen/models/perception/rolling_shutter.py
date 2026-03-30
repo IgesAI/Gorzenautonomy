@@ -20,15 +20,24 @@ class RollingShutterModel(SubsystemModel):
     """
 
     def parameter_names(self) -> list[str]:
-        return ["shutter_type", "readout_time_ms", "pixel_height", "sensor_height_mm", "focal_length_mm"]
+        return [
+            "shutter_type",
+            "readout_time_ms",
+            "pixel_height",
+            "sensor_height_mm",
+            "focal_length_mm",
+        ]
 
     def state_names(self) -> list[str]:
         return []
 
     def output_names(self) -> list[str]:
         return [
-            "rs_skew_px", "rs_wobble_px", "rs_total_distortion_px",
-            "rs_risk_score", "rs_feasible",
+            "rs_skew_px",
+            "rs_wobble_px",
+            "rs_total_distortion_px",
+            "rs_risk_score",
+            "rs_feasible",
         ]
 
     def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:
@@ -51,13 +60,17 @@ class RollingShutterModel(SubsystemModel):
         if shutter == "global" or readout_ms <= 0:
             return ModelOutput(
                 values={
-                    "rs_skew_px": 0.0, "rs_wobble_px": 0.0,
-                    "rs_total_distortion_px": 0.0, "rs_risk_score": 0.0,
+                    "rs_skew_px": 0.0,
+                    "rs_wobble_px": 0.0,
+                    "rs_total_distortion_px": 0.0,
+                    "rs_risk_score": 0.0,
                     "rs_feasible": 1.0,
                 },
                 units={
-                    "rs_skew_px": "px", "rs_wobble_px": "px",
-                    "rs_total_distortion_px": "px", "rs_risk_score": "1",
+                    "rs_skew_px": "px",
+                    "rs_wobble_px": "px",
+                    "rs_total_distortion_px": "px",
+                    "rs_risk_score": "1",
                     "rs_feasible": "1",
                 },
             )
@@ -74,7 +87,7 @@ class RollingShutterModel(SubsystemModel):
         wobble_rad = angular_rate_rps * t_readout
         wobble_px = wobble_rad * focal_length_px
 
-        total = np.sqrt(skew_px ** 2 + wobble_px ** 2)
+        total = np.sqrt(skew_px**2 + wobble_px**2)
 
         # Risk score: 0 = no risk, 1 = exceeds budget by 2x+
         risk = min(total / (max_blur + 1e-6), 2.0) / 2.0
@@ -90,8 +103,10 @@ class RollingShutterModel(SubsystemModel):
                 "rs_feasible": float(feasible),
             },
             units={
-                "rs_skew_px": "px", "rs_wobble_px": "px",
-                "rs_total_distortion_px": "px", "rs_risk_score": "1",
+                "rs_skew_px": "px",
+                "rs_wobble_px": "px",
+                "rs_total_distortion_px": "px",
+                "rs_risk_score": "1",
                 "rs_feasible": "1",
             },
             feasible=feasible,

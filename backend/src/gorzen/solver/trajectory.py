@@ -19,6 +19,7 @@ from gorzen.validation.parameter_validator import validate_params, REQUIRED_SENS
 
 try:
     import casadi as ca
+
     HAS_CASADI = True
 except ImportError:
     HAS_CASADI = False
@@ -47,19 +48,23 @@ def default_power_model(
     """
     T_isa = TEMP_0 - LAPSE_RATE * altitude_m
     rho = RHO_0 * (T_isa / TEMP_0) ** 4.2561
-    AR = wing_span_m ** 2 / (wing_area_m2 + 1e-6)
+    AR = wing_span_m**2 / (wing_area_m2 + 1e-6)
     W = mass_kg * 9.81
     v = max(speed_ms, 0.5)
-    q = 0.5 * rho * v ** 2
+    q = 0.5 * rho * v**2
     CL = W / (q * wing_area_m2 + 1e-6) if speed_ms > 2.0 else 0.0
-    Cdi = CL ** 2 / (np.pi * AR * oswald_e + 1e-6) if speed_ms > 2.0 else 0.0
+    Cdi = CL**2 / (np.pi * AR * oswald_e + 1e-6) if speed_ms > 2.0 else 0.0
     D = q * wing_area_m2 * (cd0 + Cdi)
     P_drag_kw = D * v / 1000.0
     return max(idle_power_kw, P_drag_kw / prop_efficiency) * 1000.0
 
 
 _REQUIRED_POWER_MODEL_PARAMS = [
-    "mass_total_kg", "wing_area_m2", "wing_span_m", "cd0", "oswald_efficiency",
+    "mass_total_kg",
+    "wing_area_m2",
+    "wing_span_m",
+    "cd0",
+    "oswald_efficiency",
 ]
 
 
@@ -80,9 +85,13 @@ def make_power_model_from_params(params: dict[str, float]) -> Callable[[float, f
 
     def power_fn(speed_ms: float, altitude_m: float) -> float:
         return default_power_model(
-            speed_ms, altitude_m,
-            mass_kg=mass_kg, wing_area_m2=wing_area,
-            wing_span_m=wing_span, cd0=cd0, oswald_e=oswald_e,
+            speed_ms,
+            altitude_m,
+            mass_kg=mass_kg,
+            wing_area_m2=wing_area,
+            wing_span_m=wing_span,
+            cd0=cd0,
+            oswald_e=oswald_e,
         )
 
     return power_fn
@@ -164,14 +173,24 @@ class TrajectoryOptimizer:
 
         if HAS_CASADI:
             return self._casadi_optimize(
-                distances, altitude_bounds, speed_bounds,
-                energy_budget_wh, target_gsd_cm, max_blur_px, overlap_pct,
+                distances,
+                altitude_bounds,
+                speed_bounds,
+                energy_budget_wh,
+                target_gsd_cm,
+                max_blur_px,
+                overlap_pct,
                 waypoints,
             )
         else:
             return self._analytical_optimize(
-                distances, altitude_bounds, speed_bounds,
-                energy_budget_wh, target_gsd_cm, max_blur_px, overlap_pct,
+                distances,
+                altitude_bounds,
+                speed_bounds,
+                energy_budget_wh,
+                target_gsd_cm,
+                max_blur_px,
+                overlap_pct,
                 waypoints,
             )
 
@@ -329,14 +348,16 @@ class TrajectoryOptimizer:
                 frac = dist_along / (distances[i] + 1e-6)
                 lat = waypoints[i][0] + frac * (waypoints[i + 1][0] - waypoints[i][0])
                 lon = waypoints[i][1] + frac * (waypoints[i + 1][1] - waypoints[i][1])
-                photo_schedule.append({
-                    "lat": lat,
-                    "lon": lon,
-                    "altitude_m": altitudes[i],
-                    "cumulative_distance_m": cumulative_dist + dist_along,
-                    "time_s": (cumulative_dist + dist_along) / (speeds[i] + 1e-3),
-                    "trigger_interval_s": trigger_interval_s,
-                })
+                photo_schedule.append(
+                    {
+                        "lat": lat,
+                        "lon": lon,
+                        "altitude_m": altitudes[i],
+                        "cumulative_distance_m": cumulative_dist + dist_along,
+                        "time_s": (cumulative_dist + dist_along) / (speeds[i] + 1e-3),
+                        "trigger_interval_s": trigger_interval_s,
+                    }
+                )
                 dist_along += photo_interval_m
 
             cumulative_dist += distances[i]
@@ -369,7 +390,7 @@ class TrajectoryOptimizer:
 
         Returns MSL bounds that maintain the requested AGL clearance above terrain.
         """
-        if not hasattr(self, '_terrain_elevations') or not self._terrain_elevations:
+        if not hasattr(self, "_terrain_elevations") or not self._terrain_elevations:
             return base_alt_bounds
         ground_elev = 0.0
         if segment_idx < len(self._terrain_elevations):

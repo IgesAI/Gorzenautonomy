@@ -15,22 +15,63 @@ from gorzen.schemas.twin_graph import VehicleTwin
 router = APIRouter()
 
 SUBSYSTEM_KEYS = [
-    "airframe", "lift_propulsion", "cruise_propulsion", "fuel_system",
-    "energy", "avionics", "compute", "comms", "payload", "ai_model",
+    "airframe",
+    "lift_propulsion",
+    "cruise_propulsion",
+    "fuel_system",
+    "energy",
+    "avionics",
+    "compute",
+    "comms",
+    "payload",
+    "ai_model",
 ]
 
 SUBSYSTEM_META: dict[str, dict[str, str]] = {
-    "airframe": {"label": "Airframe", "description": "Airframe dimensions, mass properties, aero coefficients, and operational limits"},
-    "cruise_propulsion": {"label": "Engine / Cruise", "description": "ICE engine configuration, EFI, generator, and hybrid power management"},
-    "fuel_system": {"label": "Fuel System", "description": "Fuel type, tank capacity, consumption model, and reserve policy"},
-    "lift_propulsion": {"label": "VTOL Lift Motors", "description": "Electric VTOL lift motors, rotors, and ESC configuration"},
-    "energy": {"label": "Battery / Electrical", "description": "Battery pack for VTOL motors and avionics, generator charging"},
-    "avionics": {"label": "Avionics", "description": "Autopilot, GPS/RTK, IMU, and navigation filter configuration"},
-    "compute": {"label": "Compute", "description": "Onboard SoC, accelerator, thermal throttling, and inference performance"},
-    "comms": {"label": "Communications", "description": "MANET, SATCOM, link budget, and QoS requirements"},
-    "payload": {"label": "Payload", "description": "Camera, IR sensor, gimbal, encoding, and special payload capabilities"},
-    "ai_model": {"label": "AI Models", "description": "Onboard detection/classification model, runtime, and degradation curves"},
-    "mission_profile": {"label": "Mission Profile", "description": "Environment conditions, mission constraints, and perception requirements"},
+    "airframe": {
+        "label": "Airframe",
+        "description": "Airframe dimensions, mass properties, aero coefficients, and operational limits",
+    },
+    "cruise_propulsion": {
+        "label": "Engine / Cruise",
+        "description": "ICE engine configuration, EFI, generator, and hybrid power management",
+    },
+    "fuel_system": {
+        "label": "Fuel System",
+        "description": "Fuel type, tank capacity, consumption model, and reserve policy",
+    },
+    "lift_propulsion": {
+        "label": "VTOL Lift Motors",
+        "description": "Electric VTOL lift motors, rotors, and ESC configuration",
+    },
+    "energy": {
+        "label": "Battery / Electrical",
+        "description": "Battery pack for VTOL motors and avionics, generator charging",
+    },
+    "avionics": {
+        "label": "Avionics",
+        "description": "Autopilot, GPS/RTK, IMU, and navigation filter configuration",
+    },
+    "compute": {
+        "label": "Compute",
+        "description": "Onboard SoC, accelerator, thermal throttling, and inference performance",
+    },
+    "comms": {
+        "label": "Communications",
+        "description": "MANET, SATCOM, link budget, and QoS requirements",
+    },
+    "payload": {
+        "label": "Payload",
+        "description": "Camera, IR sensor, gimbal, encoding, and special payload capabilities",
+    },
+    "ai_model": {
+        "label": "AI Models",
+        "description": "Onboard detection/classification model, runtime, and degradation curves",
+    },
+    "mission_profile": {
+        "label": "Mission Profile",
+        "description": "Environment conditions, mission constraints, and perception requirements",
+    },
 }
 
 
@@ -56,7 +97,12 @@ async def get_twin_schema() -> dict[str, Any]:
     mission_profile_flat["mission_type"] = {
         "value": mp.get("mission_type", "isr"),
         "units": "",
-        "ui_hints": {"display_name": "Mission Type", "group": "general", "advanced": False, "control_type": "text_input"},
+        "ui_hints": {
+            "display_name": "Mission Type",
+            "group": "general",
+            "advanced": False,
+            "control_type": "text_input",
+        },
     }
     for k, v in env_params.items():
         mission_profile_flat[k] = v

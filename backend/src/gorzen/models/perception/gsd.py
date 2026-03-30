@@ -26,8 +26,11 @@ class GSDModel(SubsystemModel):
 
     def parameter_names(self) -> list[str]:
         return [
-            "sensor_width_mm", "sensor_height_mm",
-            "focal_length_mm", "pixel_width", "pixel_height",
+            "sensor_width_mm",
+            "sensor_height_mm",
+            "focal_length_mm",
+            "pixel_width",
+            "pixel_height",
         ]
 
     def state_names(self) -> list[str]:
@@ -35,9 +38,14 @@ class GSDModel(SubsystemModel):
 
     def output_names(self) -> list[str]:
         return [
-            "gsd_h_cm_px", "gsd_w_cm_px", "gsd_cm_px",
-            "footprint_w_m", "footprint_h_m",
-            "pixels_on_target", "fov_h_deg", "fov_v_deg",
+            "gsd_h_cm_px",
+            "gsd_w_cm_px",
+            "gsd_cm_px",
+            "footprint_w_m",
+            "footprint_h_m",
+            "pixels_on_target",
+            "fov_h_deg",
+            "fov_v_deg",
         ]
 
     def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:
@@ -86,10 +94,14 @@ class GSDModel(SubsystemModel):
                 "fov_v_deg": fov_v,
             },
             units={
-                "gsd_h_cm_px": "cm/px", "gsd_w_cm_px": "cm/px",
+                "gsd_h_cm_px": "cm/px",
+                "gsd_w_cm_px": "cm/px",
                 "gsd_cm_px": "cm/px",
-                "footprint_w_m": "m", "footprint_h_m": "m",
-                "pixels_on_target": "px", "fov_h_deg": "deg", "fov_v_deg": "deg",
+                "footprint_w_m": "m",
+                "footprint_h_m": "m",
+                "pixels_on_target": "px",
+                "fov_h_deg": "deg",
+                "fov_v_deg": "deg",
             },
         )
 
@@ -121,7 +133,11 @@ def compute_altitude_band(
     # Max altitude from POT constraint — use worst-case axis (same as GSD)
     # POT = target_size_m / gsd_m = target_size_m / (gsd_scale * altitude)
     # Require POT >= min_pixels_on_target → altitude <= target_size_m / (gsd_scale * min_pot)
-    h_max_pot = target_size_m / (gsd_scale * min_pixels_on_target) if (min_pixels_on_target > 0 and gsd_scale > 0) else 999.0
+    h_max_pot = (
+        target_size_m / (gsd_scale * min_pixels_on_target)
+        if (min_pixels_on_target > 0 and gsd_scale > 0)
+        else 999.0
+    )
 
     h_max = min(h_max_gsd, h_max_pot)
     h_min = max(h_min_gsd, 2.0)

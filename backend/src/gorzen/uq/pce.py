@@ -45,12 +45,14 @@ class PCEResult:
         total = self.sobol_total.get(output_name, {})
         entries = []
         for pname in first:
-            entries.append(SensitivityEntry(
-                parameter_name=pname,
-                sobol_first_order=first.get(pname),
-                sobol_total=total.get(pname),
-                contribution_pct=first.get(pname, 0.0) * 100,
-            ))
+            entries.append(
+                SensitivityEntry(
+                    parameter_name=pname,
+                    sobol_first_order=first.get(pname),
+                    sobol_total=total.get(pname),
+                    contribution_pct=first.get(pname, 0.0) * 100,
+                )
+            )
         entries.sort(key=lambda e: e.contribution_pct, reverse=True)
         return entries[:top_k]
 

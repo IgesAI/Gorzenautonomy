@@ -55,7 +55,14 @@ async def update_catalog_entry(
     row = await session.get(CatalogEntryDB, entry_id)
     if row is None:
         return None
-    allowed = {"subsystem_type", "manufacturer", "model_name", "description", "parameters", "datasheet_url"}
+    allowed = {
+        "subsystem_type",
+        "manufacturer",
+        "model_name",
+        "description",
+        "parameters",
+        "datasheet_url",
+    }
     for key, value in fields.items():
         if key in allowed:
             setattr(row, key, value)

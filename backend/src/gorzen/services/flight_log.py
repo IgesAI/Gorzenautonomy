@@ -73,8 +73,12 @@ CALIBRATION_TOPICS = {
     },
     "sensor_combined": {
         "fields": [
-            "gyro_rad[0]", "gyro_rad[1]", "gyro_rad[2]",
-            "accelerometer_m_s2[0]", "accelerometer_m_s2[1]", "accelerometer_m_s2[2]",
+            "gyro_rad[0]",
+            "gyro_rad[1]",
+            "gyro_rad[2]",
+            "accelerometer_m_s2[0]",
+            "accelerometer_m_s2[1]",
+            "accelerometer_m_s2[2]",
         ],
         "unit": "rad_s/m_s2",
     },
@@ -146,7 +150,9 @@ def parse_ulog(data: bytes, filename: str = "upload.ulg") -> LogSummary:
         vehicle_uuid=vehicle_uuid,
         software_version=sw_version,
         hardware_version=hw_version,
-        message_count=sum(len(d.data["timestamp"]) for d in ulog.data_list if "timestamp" in d.data),
+        message_count=sum(
+            len(d.data["timestamp"]) for d in ulog.data_list if "timestamp" in d.data
+        ),
     )
 
 
@@ -165,11 +171,15 @@ def extract_timeseries(
     # Find the topic
     matched = [d for d in ulog.data_list if d.name == topic]
     if not matched:
-        raise ValueError(f"Topic '{topic}' not found. Available: {[d.name for d in ulog.data_list]}")
+        raise ValueError(
+            f"Topic '{topic}' not found. Available: {[d.name for d in ulog.data_list]}"
+        )
 
     d = matched[0]
     if field not in d.data:
-        raise ValueError(f"Field '{field}' not in topic '{topic}'. Available: {list(d.data.keys())}")
+        raise ValueError(
+            f"Field '{field}' not in topic '{topic}'. Available: {list(d.data.keys())}"
+        )
 
     timestamps = d.data["timestamp"] / 1e6  # microseconds to seconds
     values = np.array(d.data[field], dtype=float)
@@ -251,7 +261,9 @@ def extract_calibration_data(data: bytes) -> dict[str, Any]:
                 "battery_start_v": voltages[0] if voltages else 0,
                 "battery_end_v": voltages[-1] if voltages else 0,
                 "battery_min_v": min(voltages) if voltages else 0,
-                "flight_duration_s": round(batt["timestamps_s"][-1], 1) if batt["timestamps_s"] else 0,
+                "flight_duration_s": round(batt["timestamps_s"][-1], 1)
+                if batt["timestamps_s"]
+                else 0,
             }
 
     return result

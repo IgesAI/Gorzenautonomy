@@ -9,12 +9,14 @@ import numpy as np
 
 try:
     from drone_flightplan import create_waypoint
+
     HAS_DRONE_FLIGHTPLAN = True
 except ImportError:
     HAS_DRONE_FLIGHTPLAN = False
 
 try:
     from ortools.constraint_solver import pywrapcp, routing_enums_pb2
+
     HAS_ORTOOLS = True
 except ImportError:
     HAS_ORTOOLS = False
@@ -42,7 +44,9 @@ def geojson_to_waypoints(
     try:
         import geojson as _geojson
     except ImportError as e:
-        raise RuntimeError("geojson package required — pip install geojson or install gorzen[coverage]") from e
+        raise RuntimeError(
+            "geojson package required — pip install geojson or install gorzen[coverage]"
+        ) from e
 
     fc = _geojson.loads(geojson_str)
     waypoints: list[tuple[float, float, float]] = []
@@ -108,7 +112,8 @@ def _point_in_polygon(point: tuple[float, float], polygon: list[tuple[float, flo
 
 
 def _intersect_horizontal_line_with_polygon(
-    lat: float, polygon: list[tuple[float, float]],
+    lat: float,
+    polygon: list[tuple[float, float]],
 ) -> list[float]:
     """Find all lon-intersections of a horizontal line at given lat with polygon edges."""
     intersections: list[float] = []
@@ -183,7 +188,9 @@ def generate_polygon_clipped_lawnmower(
             seg_start_lon = lon_crossings[k]
             seg_end_lon = lon_crossings[k + 1]
 
-            n_points = max(2, int(abs(seg_end_lon - seg_start_lon) * m_per_deg_lon / line_spacing) + 1)
+            n_points = max(
+                2, int(abs(seg_end_lon - seg_start_lon) * m_per_deg_lon / line_spacing) + 1
+            )
             if direction == 1:
                 lons_on_line = np.linspace(seg_start_lon, seg_end_lon, n_points)
             else:

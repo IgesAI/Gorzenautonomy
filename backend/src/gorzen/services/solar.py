@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 @dataclass
 class SolarPosition:
     """Sun position and derived illuminance quantities."""
+
     elevation_deg: float
     azimuth_deg: float
     zenith_deg: float
@@ -29,9 +30,9 @@ class SolarPosition:
     sunrise_hour: float
     sunset_hour: float
     day_length_hr: float
-    ghi_w_m2: float        # Global Horizontal Irradiance
-    dni_w_m2: float        # Direct Normal Irradiance
-    dhi_w_m2: float        # Diffuse Horizontal Irradiance
+    ghi_w_m2: float  # Global Horizontal Irradiance
+    dni_w_m2: float  # Direct Normal Irradiance
+    dhi_w_m2: float  # Diffuse Horizontal Irradiance
     illuminance_lux: float  # Scene illuminance estimate
     solar_noon_utc: str
     is_daytime: bool
@@ -92,26 +93,22 @@ def compute_solar_position(
     eot = 9.87 * math.sin(2 * B) - 7.53 * math.cos(B) - 1.5 * math.sin(B)
 
     # Solar time
-    solar_time_min = (
-        dt.hour * 60 + dt.minute + dt.second / 60.0 + lon * 4 + eot
-    )
-    hour_angle = (solar_time_min / 4.0 - 180.0)
+    solar_time_min = dt.hour * 60 + dt.minute + dt.second / 60.0 + lon * 4 + eot
+    hour_angle = solar_time_min / 4.0 - 180.0
     ha_rad = math.radians(hour_angle)
 
     # Solar elevation and azimuth
     lat_rad = math.radians(lat)
-    sin_elev = (
-        math.sin(lat_rad) * math.sin(declination)
-        + math.cos(lat_rad) * math.cos(declination) * math.cos(ha_rad)
-    )
+    sin_elev = math.sin(lat_rad) * math.sin(declination) + math.cos(lat_rad) * math.cos(
+        declination
+    ) * math.cos(ha_rad)
     elevation = math.asin(max(-1, min(1, sin_elev)))
     elev_deg = math.degrees(elevation)
     zenith_deg = 90.0 - elev_deg
 
     # Azimuth
-    cos_az = (
-        (math.sin(declination) - math.sin(lat_rad) * sin_elev)
-        / (math.cos(lat_rad) * math.cos(elevation) + 1e-12)
+    cos_az = (math.sin(declination) - math.sin(lat_rad) * sin_elev) / (
+        math.cos(lat_rad) * math.cos(elevation) + 1e-12
     )
     cos_az = max(-1, min(1, cos_az))
     azimuth = math.degrees(math.acos(cos_az))
@@ -161,9 +158,7 @@ def compute_solar_position(
         cg1 = 5.09e-5 * altitude_m + 0.868
         cg2 = 3.92e-5 * altitude_m + 0.0387
 
-        dni = (
-            cg1 * I0 * math.exp(-cg2 * am_corrected * (fh1 + fh2 * (linke_turbidity - 1)))
-        )
+        dni = cg1 * I0 * math.exp(-cg2 * am_corrected * (fh1 + fh2 * (linke_turbidity - 1)))
         dni = max(dni, 0.0)
 
         # GHI and DHI

@@ -97,8 +97,7 @@ def export_kml(plan: MissionPlan, name: str = "Gorzen Mission") -> str:
     line_str = ET.SubElement(line_pm, "LineString")
     ET.SubElement(line_str, "altitudeMode").text = "relativeToGround"
     coords_text = " ".join(
-        f"{wp.longitude_deg},{wp.latitude_deg},{wp.altitude_m}"
-        for wp in plan.waypoints
+        f"{wp.longitude_deg},{wp.latitude_deg},{wp.altitude_m}" for wp in plan.waypoints
     )
     ET.SubElement(line_str, "coordinates").text = coords_text
 
@@ -115,9 +114,9 @@ def export_kml(plan: MissionPlan, name: str = "Gorzen Mission") -> str:
         ET.SubElement(pm, "description").text = desc
         point = ET.SubElement(pm, "Point")
         ET.SubElement(point, "altitudeMode").text = "relativeToGround"
-        ET.SubElement(point, "coordinates").text = (
-            f"{wp.longitude_deg},{wp.latitude_deg},{wp.altitude_m}"
-        )
+        ET.SubElement(
+            point, "coordinates"
+        ).text = f"{wp.longitude_deg},{wp.latitude_deg},{wp.altitude_m}"
 
     return ET.tostring(kml, encoding="unicode", xml_declaration=True)
 

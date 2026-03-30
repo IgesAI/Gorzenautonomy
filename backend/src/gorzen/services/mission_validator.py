@@ -62,6 +62,7 @@ class ValidationResult:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _get(params: dict[str, Any], *keys: str, default: Any = None) -> Any:
     """Walk nested dicts or flat keys, returning the first hit."""
     for key in keys:
@@ -103,6 +104,7 @@ def _point_in_polygon(lat: float, lon: float, polygon: Sequence[tuple[float, flo
 # ---------------------------------------------------------------------------
 # Individual checks
 # ---------------------------------------------------------------------------
+
 
 def _check_energy_budget(
     plan: MissionPlan,
@@ -389,9 +391,7 @@ def _check_temperature(
             detail="INSUFFICIENT_DATA: Current temperature not provided",
         )
 
-    current_temp = float(
-        _get(environment, "temperature_c", "temperature", default=0.0) or 0.0
-    )
+    current_temp = float(_get(environment, "temperature_c", "temperature", default=0.0) or 0.0)
 
     in_range = temp_min_c <= current_temp <= temp_max_c
 
@@ -444,7 +444,10 @@ def _check_payload_capacity(
 # Perception / detection checks
 # ---------------------------------------------------------------------------
 
-def _compute_gsd_m(altitude_m: float, sensor_width_mm: float, focal_length_mm: float, pixel_width: float) -> float:
+
+def _compute_gsd_m(
+    altitude_m: float, sensor_width_mm: float, focal_length_mm: float, pixel_width: float
+) -> float:
     """GSD in metres/pixel.  Same formula as GSDModel.evaluate."""
     return (sensor_width_mm * altitude_m) / (focal_length_mm * pixel_width)
 
@@ -704,6 +707,7 @@ def _check_frame_overlap(
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def validate_mission(
     plan: MissionPlan,

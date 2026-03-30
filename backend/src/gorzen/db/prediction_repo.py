@@ -31,7 +31,9 @@ async def create_prediction_set(
     return row
 
 
-async def get_prediction_set(session: AsyncSession, prediction_id: uuid.UUID) -> PredictionSetDB | None:
+async def get_prediction_set(
+    session: AsyncSession, prediction_id: uuid.UUID
+) -> PredictionSetDB | None:
     return await session.get(PredictionSetDB, prediction_id)
 
 

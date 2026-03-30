@@ -11,8 +11,10 @@ class ComputeModel(SubsystemModel):
 
     def parameter_names(self) -> list[str]:
         return [
-            "max_power_w", "thermal_throttle_temp_c",
-            "inference_latency_ms", "max_throughput_fps",
+            "max_power_w",
+            "thermal_throttle_temp_c",
+            "inference_latency_ms",
+            "max_throughput_fps",
         ]
 
     def state_names(self) -> list[str]:
@@ -20,8 +22,10 @@ class ComputeModel(SubsystemModel):
 
     def output_names(self) -> list[str]:
         return [
-            "effective_throughput_fps", "effective_latency_ms",
-            "compute_power_W", "throttle_factor",
+            "effective_throughput_fps",
+            "effective_latency_ms",
+            "compute_power_W",
+            "throttle_factor",
         ]
 
     def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:

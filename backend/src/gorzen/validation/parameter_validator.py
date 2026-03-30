@@ -127,10 +127,7 @@ def validate_params(
     INSUFFICIENT_DATA to the user instead.
     """
     missing = [p for p in required if not _is_present(params, p)]
-    estimated = [
-        p for p in required
-        if _is_present(params, p) and p in ESTIMATED_PARAMETERS
-    ]
+    estimated = [p for p in required if _is_present(params, p) and p in ESTIMATED_PARAMETERS]
 
     violations: list[Violation] = []
     for p in missing:
@@ -199,9 +196,10 @@ def validate_detection_params(conditions: dict[str, Any]) -> ParameterValidation
     return validate_params(conditions, REQUIRED_DETECTION_PARAMS, context="detection")
 
 
-def require_param(params: dict[str, Any], key: str, context: str = "") -> float:
+def require_param(params: dict[str, Any], key: str, context: str = "") -> Any:
     """Extract a single required parameter or raise ``ValueError``.
 
+    Returns float for numeric values, raw value for strings/bools.
     Use in hot paths where raising is acceptable (e.g. model evaluate).
     """
     if not _is_present(params, key):
@@ -209,4 +207,10 @@ def require_param(params: dict[str, Any], key: str, context: str = "") -> float:
             f"INSUFFICIENT_DATA: '{key}' is required but missing"
             + (f" (context: {context})" if context else "")
         )
-    return float(params[key])
+    val = params[key]
+    if isinstance(val, str):
+        try:
+            return float(val)
+        except ValueError:
+            return val
+    return float(val)

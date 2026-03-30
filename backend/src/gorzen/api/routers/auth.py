@@ -13,7 +13,9 @@ router = APIRouter()
 
 @router.post("/token")
 @limiter.limit("5/minute")
-async def login_for_access_token(request: Request, form: OAuth2PasswordRequestForm = Depends()) -> dict[str, str]:
+async def login_for_access_token(
+    request: Request, form: OAuth2PasswordRequestForm = Depends()
+) -> dict[str, str]:
     if not settings.auth_enabled:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

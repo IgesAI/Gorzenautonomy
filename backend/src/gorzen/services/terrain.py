@@ -19,6 +19,7 @@ OPEN_ELEVATION_URL = "https://api.open-elevation.com/api/v1/lookup"
 @dataclass
 class TerrainPoint:
     """Elevation data for a single point."""
+
     latitude: float
     longitude: float
     elevation_m: float
@@ -27,6 +28,7 @@ class TerrainPoint:
 @dataclass
 class TerrainProfile:
     """Terrain elevation profile along a path."""
+
     points: list[TerrainPoint]
     min_elevation_m: float
     max_elevation_m: float
@@ -88,8 +90,11 @@ async def fetch_terrain_profile(
 
     if not elevations:
         return TerrainProfile(
-            points=[], min_elevation_m=0, max_elevation_m=0,
-            mean_elevation_m=0, elevation_range_m=0,
+            points=[],
+            min_elevation_m=0,
+            max_elevation_m=0,
+            mean_elevation_m=0,
+            elevation_range_m=0,
         )
 
     return TerrainProfile(

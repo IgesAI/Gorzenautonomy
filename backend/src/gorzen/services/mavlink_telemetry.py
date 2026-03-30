@@ -24,32 +24,77 @@ logger = logging.getLogger(__name__)
 
 try:
     from pymavlink import mavutil
+
     PYMAVLINK_AVAILABLE = True
 except ImportError:
     PYMAVLINK_AVAILABLE = False
     mavutil = None  # type: ignore
 
 ARDUPILOT_COPTER_MODES: dict[int, str] = {
-    0: "STABILIZE", 1: "ACRO", 2: "ALT_HOLD", 3: "AUTO", 4: "GUIDED",
-    5: "LOITER", 6: "RTL", 7: "CIRCLE", 8: "POSITION", 9: "LAND",
-    10: "OF_LOITER", 11: "DRIFT", 13: "SPORT", 14: "FLIP", 15: "AUTOTUNE",
-    16: "POSHOLD", 17: "BRAKE", 18: "THROW", 19: "AVOID_ADSB",
-    20: "GUIDED_NOGPS", 21: "SMART_RTL", 22: "FLOWHOLD", 23: "FOLLOW",
-    24: "ZIGZAG", 25: "SYSTEMID", 26: "AUTOROTATE", 27: "AUTO_RTL",
+    0: "STABILIZE",
+    1: "ACRO",
+    2: "ALT_HOLD",
+    3: "AUTO",
+    4: "GUIDED",
+    5: "LOITER",
+    6: "RTL",
+    7: "CIRCLE",
+    8: "POSITION",
+    9: "LAND",
+    10: "OF_LOITER",
+    11: "DRIFT",
+    13: "SPORT",
+    14: "FLIP",
+    15: "AUTOTUNE",
+    16: "POSHOLD",
+    17: "BRAKE",
+    18: "THROW",
+    19: "AVOID_ADSB",
+    20: "GUIDED_NOGPS",
+    21: "SMART_RTL",
+    22: "FLOWHOLD",
+    23: "FOLLOW",
+    24: "ZIGZAG",
+    25: "SYSTEMID",
+    26: "AUTOROTATE",
+    27: "AUTO_RTL",
 }
 
 ARDUPILOT_PLANE_MODES: dict[int, str] = {
-    0: "MANUAL", 1: "CIRCLE", 2: "STABILIZE", 3: "TRAINING", 4: "ACRO",
-    5: "FLY_BY_WIRE_A", 6: "FLY_BY_WIRE_B", 7: "CRUISE", 8: "AUTOTUNE",
-    10: "AUTO", 11: "RTL", 12: "LOITER", 13: "TAKEOFF", 14: "AVOID_ADSB",
-    15: "GUIDED", 17: "QSTABILIZE", 18: "QHOVER", 19: "QLOITER",
-    20: "QLAND", 21: "QRTL", 22: "QAUTOTUNE", 23: "QACRO", 24: "THERMAL",
+    0: "MANUAL",
+    1: "CIRCLE",
+    2: "STABILIZE",
+    3: "TRAINING",
+    4: "ACRO",
+    5: "FLY_BY_WIRE_A",
+    6: "FLY_BY_WIRE_B",
+    7: "CRUISE",
+    8: "AUTOTUNE",
+    10: "AUTO",
+    11: "RTL",
+    12: "LOITER",
+    13: "TAKEOFF",
+    14: "AVOID_ADSB",
+    15: "GUIDED",
+    17: "QSTABILIZE",
+    18: "QHOVER",
+    19: "QLOITER",
+    20: "QLAND",
+    21: "QRTL",
+    22: "QAUTOTUNE",
+    23: "QACRO",
+    24: "THERMAL",
     25: "LOITER_ALT_QLAND",
 }
 
 GPS_FIX_TYPES: dict[int, str] = {
-    0: "NO_GPS", 1: "NO_FIX", 2: "2D_FIX", 3: "3D_FIX",
-    4: "DGPS", 5: "RTK_FLOAT", 6: "RTK_FIXED",
+    0: "NO_GPS",
+    1: "NO_FIX",
+    2: "2D_FIX",
+    3: "3D_FIX",
+    4: "DGPS",
+    5: "RTK_FLOAT",
+    6: "RTK_FIXED",
 }
 
 MAV_MODE_FLAG_SAFETY_ARMED = 128
@@ -105,16 +150,16 @@ class ConnectionState:
 def _parse_address(address: str) -> tuple[str, int]:
     """Convert our address format to pymavlink device + baud."""
     if address.startswith("serial://"):
-        rest = address[len("serial://"):]
+        rest = address[len("serial://") :]
         if ":" in rest:
             parts = rest.rsplit(":", 1)
             return parts[0], int(parts[1])
         return rest, 57600
     if address.startswith("udp://"):
-        rest = address[len("udp://"):]
+        rest = address[len("udp://") :]
         return f"udpin:{rest or '0.0.0.0:14540'}", 115200
     if address.startswith("tcp://"):
-        rest = address[len("tcp://"):]
+        rest = address[len("tcp://") :]
         return f"tcp:{rest}", 115200
     if address.upper().startswith("COM") or address.startswith("/dev/"):
         if ":" in address:
@@ -128,10 +173,12 @@ def _kill_mavsdk_servers() -> None:
     """Force-kill any lingering mavsdk_server processes to release serial ports."""
     try:
         if sys.platform == "win32":
-            subprocess.run(["taskkill", "/F", "/IM", "mavsdk_server_bin.exe"],
-                           capture_output=True, timeout=5)
-            subprocess.run(["taskkill", "/F", "/IM", "mavsdk_server.exe"],
-                           capture_output=True, timeout=5)
+            subprocess.run(
+                ["taskkill", "/F", "/IM", "mavsdk_server_bin.exe"], capture_output=True, timeout=5
+            )
+            subprocess.run(
+                ["taskkill", "/F", "/IM", "mavsdk_server.exe"], capture_output=True, timeout=5
+            )
         else:
             subprocess.run(["pkill", "-f", "mavsdk_server"], capture_output=True, timeout=5)
     except Exception:
@@ -231,14 +278,18 @@ class MAVLinkTelemetryService:
 
             self._running = True
             self._recv_thread = threading.Thread(
-                target=self._recv_thread_fn, name="mavlink-recv", daemon=True,
+                target=self._recv_thread_fn,
+                name="mavlink-recv",
+                daemon=True,
             )
             self._recv_thread.start()
             self._broadcast_task = asyncio.create_task(self._broadcast_loop())
 
             logger.info(
                 "Connected to system %d at %s (vehicle type %d)",
-                self._conn.target_system, address, self._vehicle_type,
+                self._conn.target_system,
+                address,
+                self._vehicle_type,
             )
             return True
 

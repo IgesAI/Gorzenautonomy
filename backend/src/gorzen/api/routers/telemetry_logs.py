@@ -68,7 +68,9 @@ async def list_logs(
             uid = UUID(twin_id)
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid twin_id") from None
-    rows = await telemetry_repo.list_telemetry_logs(session, twin_id=uid, limit=limit, offset=offset)
+    rows = await telemetry_repo.list_telemetry_logs(
+        session, twin_id=uid, limit=limit, offset=offset
+    )
     return [_log_to_dict(r) for r in rows]
 
 

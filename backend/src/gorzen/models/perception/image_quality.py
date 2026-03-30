@@ -26,15 +26,17 @@ class ImageQualityModel(SubsystemModel):
     # NIIRS = c0 + c1*ln(GSD) + c2*ln(RER) + c3*(G/SNR) + c4*H
     # Uses natural log (ln) per GIQE 5 formulation
     GIQE_C0 = 9.57
-    GIQE_C1 = -3.32    # GSD term (inches, natural log)
-    GIQE_C2 = 3.32     # RER term (unified, no bifurcation)
-    GIQE_C3 = -1.9     # noise gain / SNR term (G/SNR)
-    GIQE_C4 = -2.0     # edge overshoot H (refined for sharpening artifacts)
+    GIQE_C1 = -3.32  # GSD term (inches, natural log)
+    GIQE_C2 = 3.32  # RER term (unified, no bifurcation)
+    GIQE_C3 = -1.9  # noise gain / SNR term (G/SNR)
+    GIQE_C4 = -2.0  # edge overshoot H (refined for sharpening artifacts)
 
     def parameter_names(self) -> list[str]:
         return [
-            "lens_mtf_nyquist", "pixel_size_um",
-            "jpeg_quality", "encoding_bitrate_mbps",
+            "lens_mtf_nyquist",
+            "pixel_size_um",
+            "jpeg_quality",
+            "encoding_bitrate_mbps",
             "min_gsd_cm_px",
         ]
 
@@ -43,8 +45,11 @@ class ImageQualityModel(SubsystemModel):
 
     def output_names(self) -> list[str]:
         return [
-            "system_mtf", "snr_db", "compression_quality",
-            "image_utility_score", "niirs_equivalent",
+            "system_mtf",
+            "snr_db",
+            "compression_quality",
+            "image_utility_score",
+            "niirs_equivalent",
         ]
 
     def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:
@@ -55,7 +60,9 @@ class ImageQualityModel(SubsystemModel):
         gsd_cm = require_param(conditions, "gsd_cm_px", "ImageQualityModel")
         blur_px = require_param(conditions, "smear_pixels", "ImageQualityModel")
         light_lux = require_param(conditions, "ambient_light_lux_out", "ImageQualityModel")
-        compression_qf = require_param(conditions, "compression_quality_factor", "ImageQualityModel")
+        compression_qf = require_param(
+            conditions, "compression_quality_factor", "ImageQualityModel"
+        )
 
         # System MTF: lens * sampling * motion blur degradation
         # LITERATURE: sinc(0.5) for square pixel aperture
@@ -68,9 +75,9 @@ class ImageQualityModel(SubsystemModel):
         rer = 0.5 + 0.5 * system_mtf
 
         # SNR model (simplified: photon noise + read noise)
-        signal = pixel_um ** 2 * light_lux * 0.001
+        signal = pixel_um**2 * light_lux * 0.001
         read_noise = 3.0  # electrons equivalent
-        snr = signal / (np.sqrt(signal + read_noise ** 2) + 1e-6)
+        snr = signal / (np.sqrt(signal + read_noise**2) + 1e-6)
         snr_db = 20 * np.log10(snr + 1e-6)
 
         # HEURISTIC: requires sensor-specific calibration
@@ -81,7 +88,7 @@ class ImageQualityModel(SubsystemModel):
 
         # GIQE 5: NIIRS = c0 + c1*ln(GSD_in) + c2*ln(RER) + c3*(G/SNR) + c4*H
         # GSD must be in inches; uses natural log (ln); G=1 (no noise gain), H=0 (no sharpening)
-        gsd_inches = (gsd_cm / 2.54)  # cm -> inches
+        gsd_inches = gsd_cm / 2.54  # cm -> inches
         niirs = (
             self.GIQE_C0
             + self.GIQE_C1 * np.log(gsd_inches + 1e-9)
@@ -110,8 +117,10 @@ class ImageQualityModel(SubsystemModel):
                 "niirs_equivalent": niirs,
             },
             units={
-                "system_mtf": "1", "snr_db": "dB",
+                "system_mtf": "1",
+                "snr_db": "dB",
                 "compression_quality": "1",
-                "image_utility_score": "1", "niirs_equivalent": "NIIRS",
+                "image_utility_score": "1",
+                "niirs_equivalent": "NIIRS",
             },
         )

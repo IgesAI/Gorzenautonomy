@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 # Parameter classification and provenance
 # ---------------------------------------------------------------------------
 
+
 class ParameterClassification(str, Enum):
     """How a parameter value may be used in computations."""
 
@@ -108,6 +109,7 @@ class ComponentCatalogEntry(BaseModel):
 # Provenance helpers for seed data
 # ---------------------------------------------------------------------------
 
+
 def _cobra_prov(page: str = "1", rev: str = "2025-04") -> dict:
     """Provenance record for Cobra AERO engine datasheet values."""
     return {
@@ -190,32 +192,34 @@ SEED_ENGINES: list[dict] = [
         "model_name": "A33HF",
         "description": "Air-cooled 2-stroke single, 33cc, heavy fuel (JP5/JP8/Jet A). Purpose-designed for HF, not a conversion.",
         "datasheet_url": "https://www.cobra-aero.com",
-        "parameters": (_A33HF_PARAMS := {
-            "engine_type": "2stroke_single",
-            "displacement_cc": 33.0,
-            "engine_mass_kg": 3.15,
-            "max_power_kw": 1.9,
-            "max_power_rpm": 8050,
-            "bsfc_cruise_g_kwh": 500.0,
-            "cooling_type": "air_cooled",
-            "efi_system": "intelliject",
-            "altitude_compensation": True,
-            "cold_start_compensation": True,
-            "preheat_required": True,
-            "preheat_time_min": 10,
-            "preheat_power_w": 110,
-            "generator_output_w": 200,
-            "generator_output_intermittent_w": 400,
-            "hybrid_boost_available": True,
-            "engine_can_interface": True,
-            "engine_serial_interface": True,
-            "onboard_data_logging": True,
-            "sensor_cht": True,
-            "sensor_mat": True,
-            "sensor_fuel_pressure": True,
-            "sensor_baro": True,
-            "sensor_map": True,
-        }),
+        "parameters": (
+            _A33HF_PARAMS := {
+                "engine_type": "2stroke_single",
+                "displacement_cc": 33.0,
+                "engine_mass_kg": 3.15,
+                "max_power_kw": 1.9,
+                "max_power_rpm": 8050,
+                "bsfc_cruise_g_kwh": 500.0,
+                "cooling_type": "air_cooled",
+                "efi_system": "intelliject",
+                "altitude_compensation": True,
+                "cold_start_compensation": True,
+                "preheat_required": True,
+                "preheat_time_min": 10,
+                "preheat_power_w": 110,
+                "generator_output_w": 200,
+                "generator_output_intermittent_w": 400,
+                "hybrid_boost_available": True,
+                "engine_can_interface": True,
+                "engine_serial_interface": True,
+                "onboard_data_logging": True,
+                "sensor_cht": True,
+                "sensor_mat": True,
+                "sensor_fuel_pressure": True,
+                "sensor_baro": True,
+                "sensor_map": True,
+            }
+        ),
         "parameter_provenance": {k: _cobra_prov("A33HF_Data_Sheet p1") for k in _A33HF_PARAMS},
     },
     {
@@ -224,32 +228,34 @@ SEED_ENGINES: list[dict] = [
         "model_name": "A99HF",
         "description": "Liquid-cooled 2-stroke inline triple, 101.4cc, heavy fuel. Low vibration, high power.",
         "datasheet_url": "https://www.cobra-aero.com",
-        "parameters": (_A99HF_PARAMS := {
-            "engine_type": "2stroke_triple",
-            "displacement_cc": 101.4,
-            "engine_mass_kg": 8.4,
-            "max_power_kw": 6.5,
-            "max_power_rpm": 7000,
-            "bsfc_cruise_g_kwh": 460.0,
-            "cooling_type": "liquid_cooled",
-            "efi_system": "intelliject",
-            "altitude_compensation": True,
-            "cold_start_compensation": True,
-            "preheat_required": True,
-            "preheat_time_min": 10,
-            "preheat_power_w": 110,
-            "generator_output_w": 650,
-            "generator_output_intermittent_w": 800,
-            "hybrid_boost_available": True,
-            "engine_can_interface": True,
-            "engine_serial_interface": True,
-            "onboard_data_logging": True,
-            "sensor_cht": True,
-            "sensor_mat": True,
-            "sensor_fuel_pressure": True,
-            "sensor_baro": True,
-            "sensor_map": True,
-        }),
+        "parameters": (
+            _A99HF_PARAMS := {
+                "engine_type": "2stroke_triple",
+                "displacement_cc": 101.4,
+                "engine_mass_kg": 8.4,
+                "max_power_kw": 6.5,
+                "max_power_rpm": 7000,
+                "bsfc_cruise_g_kwh": 460.0,
+                "cooling_type": "liquid_cooled",
+                "efi_system": "intelliject",
+                "altitude_compensation": True,
+                "cold_start_compensation": True,
+                "preheat_required": True,
+                "preheat_time_min": 10,
+                "preheat_power_w": 110,
+                "generator_output_w": 650,
+                "generator_output_intermittent_w": 800,
+                "hybrid_boost_available": True,
+                "engine_can_interface": True,
+                "engine_serial_interface": True,
+                "onboard_data_logging": True,
+                "sensor_cht": True,
+                "sensor_mat": True,
+                "sensor_fuel_pressure": True,
+                "sensor_baro": True,
+                "sensor_map": True,
+            }
+        ),
         "parameter_provenance": {k: _cobra_prov("A99HF_data_sheet p1") for k in _A99HF_PARAMS},
     },
     {
@@ -258,33 +264,35 @@ SEED_ENGINES: list[dict] = [
         "model_name": "A99S (Series Generator)",
         "description": "Liquid-cooled 2-stroke inline triple, 99cc, series generator. 4.8kW DC rectified output.",
         "datasheet_url": "https://www.cobra-aero.com",
-        "parameters": (_A99S_PARAMS := {
-            "engine_type": "2stroke_triple",
-            "displacement_cc": 99.0,
-            "engine_mass_kg": 5.58,
-            "max_power_kw": 4.8,
-            "max_power_rpm": 7000,
-            "bsfc_cruise_g_kwh": 460.0,
-            "cooling_type": "liquid_cooled",
-            "efi_system": "intelliject",
-            "altitude_compensation": True,
-            "cold_start_compensation": True,
-            "preheat_required": False,
-            "preheat_time_min": 0,
-            "preheat_power_w": 0,
-            "power_architecture": "series_hybrid",
-            "generator_output_w": 4800,
-            "generator_output_intermittent_w": 4800,
-            "generator_voltage_v": 70,
-            "engine_can_interface": True,
-            "engine_serial_interface": True,
-            "onboard_data_logging": True,
-            "sensor_cht": True,
-            "sensor_mat": True,
-            "sensor_fuel_pressure": True,
-            "sensor_baro": True,
-            "sensor_map": True,
-        }),
+        "parameters": (
+            _A99S_PARAMS := {
+                "engine_type": "2stroke_triple",
+                "displacement_cc": 99.0,
+                "engine_mass_kg": 5.58,
+                "max_power_kw": 4.8,
+                "max_power_rpm": 7000,
+                "bsfc_cruise_g_kwh": 460.0,
+                "cooling_type": "liquid_cooled",
+                "efi_system": "intelliject",
+                "altitude_compensation": True,
+                "cold_start_compensation": True,
+                "preheat_required": False,
+                "preheat_time_min": 0,
+                "preheat_power_w": 0,
+                "power_architecture": "series_hybrid",
+                "generator_output_w": 4800,
+                "generator_output_intermittent_w": 4800,
+                "generator_voltage_v": 70,
+                "engine_can_interface": True,
+                "engine_serial_interface": True,
+                "onboard_data_logging": True,
+                "sensor_cht": True,
+                "sensor_mat": True,
+                "sensor_fuel_pressure": True,
+                "sensor_baro": True,
+                "sensor_map": True,
+            }
+        ),
         "parameter_provenance": {k: _cobra_prov("A99S_data_sheet p1") for k in _A99S_PARAMS},
     },
 ]
@@ -371,7 +379,9 @@ SEED_AIRFRAMES: list[dict] = [
         "description": "Long-endurance VTOL UAS for ISR, comms relay. Moving baseline capable (land/maritime).",
         "datasheet_url": "https://www.verticalautonomy.com",
         "parameters": _VA120_PARAMS,
-        "parameter_provenance": {k: _va_prov("VA-120", "VA-120+Datasheet p1") for k in _VA120_PARAMS},
+        "parameter_provenance": {
+            k: _va_prov("VA-120", "VA-120+Datasheet p1") for k in _VA120_PARAMS
+        },
     },
     {
         "subsystem_type": "airframe",
@@ -380,7 +390,9 @@ SEED_AIRFRAMES: list[dict] = [
         "description": "Long-endurance heavy-fuel VTOL UAS. Next-gen platform, 8-16hr endurance, SATCOM.",
         "datasheet_url": "https://www.verticalautonomy.com",
         "parameters": _VA150_PARAMS,
-        "parameter_provenance": {k: _va_prov("VA-150", "VA-150+Datasheet p1") for k in _VA150_PARAMS},
+        "parameter_provenance": {
+            k: _va_prov("VA-150", "VA-150+Datasheet p1") for k in _VA150_PARAMS
+        },
     },
 ]
 
@@ -447,7 +459,9 @@ SEED_FUEL_SYSTEMS: list[dict] = [
         "manufacturer": "Vertical Autonomy",
         "model_name": "VA-120/150 Fuel System",
         "parameters": _FUEL_VA120_150,
-        "parameter_provenance": {k: _va_prov("VA-120/150", "fuel_system_spec") for k in _FUEL_VA120_150},
+        "parameter_provenance": {
+            k: _va_prov("VA-120/150", "fuel_system_spec") for k in _FUEL_VA120_150
+        },
     },
 ]
 

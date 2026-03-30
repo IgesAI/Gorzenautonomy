@@ -61,6 +61,7 @@ class ULogParser:
 
         try:
             import pyulog
+
             ulog = pyulog.ULog(str(path))
 
             dataset.metadata = {
@@ -84,12 +85,16 @@ class ULogParser:
                     fields = {}
                     for fn in field_names:
                         val = d.data[fn][i]
-                        fields[fn] = float(val) if isinstance(val, (int, float, np.number)) else str(val)
-                    dataset.records.append(TelemetryRecord(
-                        timestamp_us=int(timestamps[i]),
-                        topic=topic,
-                        fields=fields,
-                    ))
+                        fields[fn] = (
+                            float(val) if isinstance(val, (int, float, np.number)) else str(val)
+                        )
+                    dataset.records.append(
+                        TelemetryRecord(
+                            timestamp_us=int(timestamps[i]),
+                            topic=topic,
+                            fields=fields,
+                        )
+                    )
         except ImportError:
             dataset.metadata["error"] = "pyulog not installed"
         except Exception as e:
@@ -110,6 +115,7 @@ class DataFlashParser:
 
         try:
             from pymavlink import mavutil
+
             mlog = mavutil.mavlink_connection(str(path))
 
             while True:
@@ -126,14 +132,18 @@ class DataFlashParser:
                     for fname in msg._fieldnames:
                         val = getattr(msg, fname, None)
                         if val is not None:
-                            fields[fname] = float(val) if isinstance(val, (int, float)) else str(val)
+                            fields[fname] = (
+                                float(val) if isinstance(val, (int, float)) else str(val)
+                            )
 
                 timestamp = getattr(msg, "TimeUS", 0) or getattr(msg, "time_usec", 0) or 0
-                dataset.records.append(TelemetryRecord(
-                    timestamp_us=int(timestamp),
-                    topic=msg_type,
-                    fields=fields,
-                ))
+                dataset.records.append(
+                    TelemetryRecord(
+                        timestamp_us=int(timestamp),
+                        topic=msg_type,
+                        fields=fields,
+                    )
+                )
         except ImportError:
             dataset.metadata["error"] = "pymavlink not installed"
         except Exception as e:
@@ -149,8 +159,12 @@ class DroneCAN_ESC_Parser:
     """
 
     CANONICAL_FIELDS = [
-        "voltage_v", "current_a", "temperature_c",
-        "rpm", "power_rating_pct", "error_count",
+        "voltage_v",
+        "current_a",
+        "temperature_c",
+        "rpm",
+        "power_rating_pct",
+        "error_count",
     ]
 
     def parse_from_ulog(self, dataset: TelemetryDataset) -> list[TelemetryRecord]:
@@ -172,11 +186,13 @@ class DroneCAN_ESC_Parser:
                         canonical[canon] = r.fields[orig]
 
                 if canonical:
-                    esc_records.append(TelemetryRecord(
-                        timestamp_us=r.timestamp_us,
-                        topic="esc_telemetry",
-                        fields=canonical,
-                    ))
+                    esc_records.append(
+                        TelemetryRecord(
+                            timestamp_us=r.timestamp_us,
+                            topic="esc_telemetry",
+                            fields=canonical,
+                        )
+                    )
 
         return esc_records
 

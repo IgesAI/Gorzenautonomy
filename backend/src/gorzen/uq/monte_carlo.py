@@ -49,7 +49,9 @@ class MCResult:
             units=units,
         )
 
-    def probability_constraint_satisfied(self, output_name: str, threshold: float, direction: str = ">=") -> float:
+    def probability_constraint_satisfied(
+        self, output_name: str, threshold: float, direction: str = ">="
+    ) -> float:
         s = self.output_samples.get(output_name, np.array([0.0]))
         if direction == ">=":
             return float(np.mean(s >= threshold))
@@ -68,10 +70,12 @@ class MCResult:
             if len(x) != len(y):
                 continue
             corr = np.corrcoef(x, y)[0, 1] if np.std(x) > 1e-12 and np.std(y) > 1e-12 else 0.0
-            entries.append(SensitivityEntry(
-                parameter_name=iname,
-                contribution_pct=abs(corr) * 100,
-            ))
+            entries.append(
+                SensitivityEntry(
+                    parameter_name=iname,
+                    contribution_pct=abs(corr) * 100,
+                )
+            )
 
         entries.sort(key=lambda e: e.contribution_pct, reverse=True)
         return entries[:top_k]
@@ -122,7 +126,9 @@ class MonteCarloEngine:
             specs = [inp.uncertainty for inp in inputs if inp.uncertainty is not None]
             names = [inp.name for inp in inputs if inp.uncertainty is not None]
             if specs and len(specs) == correlation_matrix.shape[0]:
-                corr_samples = sample_correlated(specs, correlation_matrix, self.n_samples, self.rng)
+                corr_samples = sample_correlated(
+                    specs, correlation_matrix, self.n_samples, self.rng
+                )
                 for i, name in enumerate(names):
                     samples[name] = corr_samples[:, i]
 
@@ -131,9 +137,13 @@ class MonteCarloEngine:
                 continue
 
             if inp.discrete_choices is not None:
-                weights = inp.discrete_weights or [1.0 / len(inp.discrete_choices)] * len(inp.discrete_choices)
+                weights = inp.discrete_weights or [1.0 / len(inp.discrete_choices)] * len(
+                    inp.discrete_choices
+                )
                 weights_arr = np.array(weights) / sum(weights)
-                samples[inp.name] = self.rng.choice(inp.discrete_choices, size=self.n_samples, p=weights_arr)
+                samples[inp.name] = self.rng.choice(
+                    inp.discrete_choices, size=self.n_samples, p=weights_arr
+                )
             elif inp.uncertainty is not None:
                 samples[inp.name] = sample_from_spec(inp.uncertainty, self.n_samples, self.rng)
             else:

@@ -33,6 +33,7 @@ def _env_rate_limit() -> str:
 
 # --- Schemas ---
 
+
 class SolarRequest(BaseModel):
     latitude: float = 35.0
     longitude: float = -106.0
@@ -61,6 +62,7 @@ class ModelChainPoint(BaseModel):
 
 
 # --- Endpoints ---
+
 
 @router.get("/solar")
 @limiter.limit(_env_rate_limit())
@@ -104,7 +106,9 @@ async def get_weather(
     """Fetch current weather conditions with multi-altitude wind profiles."""
     try:
         result = await fetch_weather(
-            lat=latitude, lon=longitude, elevation_m=elevation_m,
+            lat=latitude,
+            lon=longitude,
+            elevation_m=elevation_m,
         )
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Weather API error: {e}")
@@ -156,14 +160,18 @@ async def get_terrain_elevation(
 
 @router.post("/terrain/profile")
 @limiter.limit(_env_rate_limit())
-async def get_terrain_profile(http_request: Request, request: TerrainProfileRequest) -> dict[str, Any]:
+async def get_terrain_profile(
+    http_request: Request, request: TerrainProfileRequest
+) -> dict[str, Any]:
     """Fetch terrain elevation profile along a path."""
     points = [(p[0], p[1]) for p in request.points if len(p) >= 2]
     if not points:
         raise HTTPException(status_code=400, detail="No valid points")
     for lat, lon in points:
         if not -90.0 <= lat <= 90.0 or not -180.0 <= lon <= 180.0:
-            raise HTTPException(status_code=400, detail=f"Invalid coordinates: lat={lat}, lon={lon}")
+            raise HTTPException(
+                status_code=400, detail=f"Invalid coordinates: lat={lat}, lon={lon}"
+            )
 
     try:
         result = await fetch_terrain_profile(points)

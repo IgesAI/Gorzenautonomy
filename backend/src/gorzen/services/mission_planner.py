@@ -87,7 +87,9 @@ def analyze_mission(waypoints: list[Waypoint]) -> MissionAnalysis:
     for i in range(1, len(waypoints)):
         prev = waypoints[i - 1]
         curr = waypoints[i]
-        horiz = _haversine(prev.latitude_deg, prev.longitude_deg, curr.latitude_deg, curr.longitude_deg)
+        horiz = _haversine(
+            prev.latitude_deg, prev.longitude_deg, curr.latitude_deg, curr.longitude_deg
+        )
         vert = abs(curr.altitude_m - prev.altitude_m)
         dist = math.sqrt(horiz**2 + vert**2)
         distances.append(dist)
@@ -119,29 +121,33 @@ def waypoints_to_geojson(waypoints: list[Waypoint]) -> dict[str, Any]:
 
     # Waypoint markers
     for i, wp in enumerate(waypoints):
-        features.append({
-            "type": "Feature",
-            "geometry": {
-                "type": "Point",
-                "coordinates": [wp.longitude_deg, wp.latitude_deg, wp.altitude_m],
-            },
-            "properties": {
-                "order": i,
-                "altitude_m": wp.altitude_m,
-                "speed_ms": wp.speed_ms,
-                "loiter_time_s": wp.loiter_time_s,
-                "camera_action": wp.camera_action,
-            },
-        })
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [wp.longitude_deg, wp.latitude_deg, wp.altitude_m],
+                },
+                "properties": {
+                    "order": i,
+                    "altitude_m": wp.altitude_m,
+                    "speed_ms": wp.speed_ms,
+                    "loiter_time_s": wp.loiter_time_s,
+                    "camera_action": wp.camera_action,
+                },
+            }
+        )
 
     # Flight path line
     if len(waypoints) >= 2:
         coords = [[wp.longitude_deg, wp.latitude_deg, wp.altitude_m] for wp in waypoints]
-        features.append({
-            "type": "Feature",
-            "geometry": {"type": "LineString", "coordinates": coords},
-            "properties": {"type": "flight_path"},
-        })
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {"type": "LineString", "coordinates": coords},
+                "properties": {"type": "flight_path"},
+            }
+        )
 
     return {"type": "FeatureCollection", "features": features}
 
@@ -203,17 +209,19 @@ class MissionService:
 
             items = []
             for wp in self._waypoints:
-                items.append(MissionItem(
-                    latitude_deg=wp.latitude_deg,
-                    longitude_deg=wp.longitude_deg,
-                    relative_altitude_m=wp.altitude_m,
-                    speed_m_s=wp.speed_ms,
-                    is_fly_through=wp.is_fly_through,
-                    gimbal_pitch_deg=wp.gimbal_pitch_deg,
-                    gimbal_yaw_deg=float("nan"),
-                    loiter_time_s=wp.loiter_time_s,
-                    acceptance_radius_m=wp.acceptance_radius_m,
-                ))
+                items.append(
+                    MissionItem(
+                        latitude_deg=wp.latitude_deg,
+                        longitude_deg=wp.longitude_deg,
+                        relative_altitude_m=wp.altitude_m,
+                        speed_m_s=wp.speed_ms,
+                        is_fly_through=wp.is_fly_through,
+                        gimbal_pitch_deg=wp.gimbal_pitch_deg,
+                        gimbal_yaw_deg=float("nan"),
+                        loiter_time_s=wp.loiter_time_s,
+                        acceptance_radius_m=wp.acceptance_radius_m,
+                    )
+                )
 
             plan = MissionPlan(items)
             await drone.mission.upload_mission(plan)
@@ -239,16 +247,18 @@ class MissionService:
 
             self._waypoints = []
             for i, item in enumerate(plan.mission_items):
-                self._waypoints.append(Waypoint(
-                    latitude_deg=item.latitude_deg,
-                    longitude_deg=item.longitude_deg,
-                    altitude_m=item.relative_altitude_m,
-                    speed_ms=item.speed_m_s,
-                    loiter_time_s=item.loiter_time_s,
-                    is_fly_through=item.is_fly_through,
-                    gimbal_pitch_deg=item.gimbal_pitch_deg,
-                    order=i,
-                ))
+                self._waypoints.append(
+                    Waypoint(
+                        latitude_deg=item.latitude_deg,
+                        longitude_deg=item.longitude_deg,
+                        altitude_m=item.relative_altitude_m,
+                        speed_ms=item.speed_m_s,
+                        loiter_time_s=item.loiter_time_s,
+                        is_fly_through=item.is_fly_through,
+                        gimbal_pitch_deg=item.gimbal_pitch_deg,
+                        order=i,
+                    )
+                )
 
             return {
                 "success": True,
@@ -268,19 +278,21 @@ def waypoints_to_json(waypoints: list[Waypoint]) -> list[dict[str, Any]]:
             yaw_val: float | None = None
         else:
             yaw_val = yaw
-        out.append({
-            "latitude_deg": w.latitude_deg,
-            "longitude_deg": w.longitude_deg,
-            "altitude_m": w.altitude_m,
-            "speed_ms": w.speed_ms,
-            "loiter_time_s": w.loiter_time_s,
-            "acceptance_radius_m": w.acceptance_radius_m,
-            "camera_action": w.camera_action,
-            "gimbal_pitch_deg": w.gimbal_pitch_deg,
-            "yaw_deg": yaw_val,
-            "is_fly_through": w.is_fly_through,
-            "order": w.order,
-        })
+        out.append(
+            {
+                "latitude_deg": w.latitude_deg,
+                "longitude_deg": w.longitude_deg,
+                "altitude_m": w.altitude_m,
+                "speed_ms": w.speed_ms,
+                "loiter_time_s": w.loiter_time_s,
+                "acceptance_radius_m": w.acceptance_radius_m,
+                "camera_action": w.camera_action,
+                "gimbal_pitch_deg": w.gimbal_pitch_deg,
+                "yaw_deg": yaw_val,
+                "is_fly_through": w.is_fly_through,
+                "order": w.order,
+            }
+        )
     return out
 
 

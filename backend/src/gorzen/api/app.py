@@ -150,9 +150,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             raise
 
     if settings.auth_enabled and settings.admin_password == "change-me":
-        log.warning("SECURITY: Default admin credentials in use. Set GORZEN_ADMIN_PASSWORD in production.")
+        log.warning(
+            "SECURITY: Default admin credentials in use. Set GORZEN_ADMIN_PASSWORD in production."
+        )
     if settings.auth_enabled and len(settings.jwt_secret) < 32:
-        log.warning("SECURITY: JWT secret is too short. Set GORZEN_JWT_SECRET to a random 32+ char string.")
+        log.warning(
+            "SECURITY: JWT secret is too short. Set GORZEN_JWT_SECRET to a random 32+ char string."
+        )
 
     await _load_mission_draft()
 
@@ -220,18 +224,42 @@ def create_app() -> FastAPI:
     app.include_router(twin.router, prefix="/twins", tags=["twins"], dependencies=auth_dep)
     app.include_router(envelope.router, prefix="/twins", tags=["envelope"], dependencies=auth_dep)
     app.include_router(mission.router, prefix="/twins", tags=["mission"], dependencies=auth_dep)
-    app.include_router(execution.router, prefix="/execution", tags=["execution"], dependencies=auth_dep)
+    app.include_router(
+        execution.router, prefix="/execution", tags=["execution"], dependencies=auth_dep
+    )
     app.include_router(catalog.router, prefix="/catalog", tags=["catalog"], dependencies=auth_dep)
-    app.include_router(calibration.router, prefix="/calibration", tags=["calibration"], dependencies=auth_dep)
-    app.include_router(validation.router, prefix="/validation", tags=["validation"], dependencies=auth_dep)
-    app.include_router(environment.router, prefix="/environment", tags=["environment"], dependencies=auth_dep)
+    app.include_router(
+        calibration.router, prefix="/calibration", tags=["calibration"], dependencies=auth_dep
+    )
+    app.include_router(
+        validation.router, prefix="/validation", tags=["validation"], dependencies=auth_dep
+    )
+    app.include_router(
+        environment.router, prefix="/environment", tags=["environment"], dependencies=auth_dep
+    )
     app.include_router(telemetry.ws_router, prefix="/telemetry", tags=["telemetry"])
     app.include_router(telemetry.internal_router, prefix="/telemetry", tags=["telemetry"])
-    app.include_router(telemetry.router, prefix="/telemetry", tags=["telemetry"], dependencies=auth_dep)
-    app.include_router(telemetry_logs.router, prefix="/telemetry-logs", tags=["telemetry-logs"], dependencies=auth_dep)
-    app.include_router(mission_plan.router, prefix="/mission-plan", tags=["mission-plan"], dependencies=auth_dep)
-    app.include_router(predictions.router, prefix="/predictions", tags=["predictions"], dependencies=auth_dep)
-    app.include_router(predictions.validations_router, prefix="/validations", tags=["validations"], dependencies=auth_dep)
+    app.include_router(
+        telemetry.router, prefix="/telemetry", tags=["telemetry"], dependencies=auth_dep
+    )
+    app.include_router(
+        telemetry_logs.router,
+        prefix="/telemetry-logs",
+        tags=["telemetry-logs"],
+        dependencies=auth_dep,
+    )
+    app.include_router(
+        mission_plan.router, prefix="/mission-plan", tags=["mission-plan"], dependencies=auth_dep
+    )
+    app.include_router(
+        predictions.router, prefix="/predictions", tags=["predictions"], dependencies=auth_dep
+    )
+    app.include_router(
+        predictions.validations_router,
+        prefix="/validations",
+        tags=["validations"],
+        dependencies=auth_dep,
+    )
     app.include_router(audit.router, prefix="/audit", tags=["audit"], dependencies=auth_dep)
 
     @app.get("/health")

@@ -135,7 +135,9 @@ class UQPropagator:
         inputs: list[UQInput],
         output_names: list[str] | None,
     ) -> UQResult:
-        continuous = [inp for inp in inputs if inp.uncertainty is not None and inp.discrete_choices is None]
+        continuous = [
+            inp for inp in inputs if inp.uncertainty is not None and inp.discrete_choices is None
+        ]
 
         param_names = [inp.name for inp in continuous]
         means = np.array([inp.nominal for inp in continuous])
@@ -145,7 +147,7 @@ class UQPropagator:
         for inp in continuous:
             if inp.uncertainty:
                 std = inp.uncertainty.params.get("std", abs(inp.nominal) * 0.05)
-                variances.append(std ** 2)
+                variances.append(std**2)
             else:
                 variances.append((abs(inp.nominal) * 0.01) ** 2)
         cov = np.diag(variances)
@@ -167,7 +169,9 @@ class UQPropagator:
         inputs: list[UQInput],
         output_names: list[str] | None,
     ) -> UQResult:
-        continuous = [inp for inp in inputs if inp.uncertainty is not None and inp.discrete_choices is None]
+        continuous = [
+            inp for inp in inputs if inp.uncertainty is not None and inp.discrete_choices is None
+        ]
 
         param_names = [inp.name for inp in continuous]
         bounds = []
@@ -177,7 +181,11 @@ class UQPropagator:
             elif inp.uncertainty and inp.uncertainty.bounds:
                 bounds.append(inp.uncertainty.bounds)
             else:
-                std = inp.uncertainty.params.get("std", abs(inp.nominal) * 0.1) if inp.uncertainty else abs(inp.nominal) * 0.1
+                std = (
+                    inp.uncertainty.params.get("std", abs(inp.nominal) * 0.1)
+                    if inp.uncertainty
+                    else abs(inp.nominal) * 0.1
+                )
                 bounds.append((inp.nominal - 3 * std, inp.nominal + 3 * std))
 
         pce = PCESurrogate(max_order=self.pce_order)

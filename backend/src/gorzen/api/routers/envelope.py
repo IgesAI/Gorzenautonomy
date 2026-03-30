@@ -16,15 +16,31 @@ from gorzen.solver.envelope_solver import compute_envelope, estimate_endurance_b
 
 router = APIRouter()
 
-_MISSION_ENV_PARAMS = frozenset({
-    "wind_model", "wind_speed_ms", "gust_intensity", "wind_direction_deg",
-    "temperature_c", "pressure_hpa", "density_altitude_ft", "ambient_light_lux",
-})
-_MISSION_CONSTRAINT_PARAMS = frozenset({
-    "min_gsd_cm_px", "target_feature_mm", "max_blur_px", "min_identification_confidence",
-    "fuel_reserve_pct", "battery_reserve_pct", "min_overlap_pct",
-    "max_mission_duration_hr", "max_range_nmi",
-})
+_MISSION_ENV_PARAMS = frozenset(
+    {
+        "wind_model",
+        "wind_speed_ms",
+        "gust_intensity",
+        "wind_direction_deg",
+        "temperature_c",
+        "pressure_hpa",
+        "density_altitude_ft",
+        "ambient_light_lux",
+    }
+)
+_MISSION_CONSTRAINT_PARAMS = frozenset(
+    {
+        "min_gsd_cm_px",
+        "target_feature_mm",
+        "max_blur_px",
+        "min_identification_confidence",
+        "fuel_reserve_pct",
+        "battery_reserve_pct",
+        "min_overlap_pct",
+        "max_mission_duration_hr",
+        "max_range_nmi",
+    }
+)
 
 
 def _coerce_value(val: Any, default_type: type = float) -> Any:

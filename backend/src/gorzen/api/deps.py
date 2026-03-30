@@ -53,7 +53,9 @@ def decode_token(token: str) -> AuthUser:
             role = "operator"
         return AuthUser(username=sub, role=role)
     except JWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token"
+        )
 
 
 async def get_current_user(

@@ -24,6 +24,7 @@ def isa_density(altitude_m: float) -> float:
 # ICE engine model (2-stroke singles/triples, altitude-compensated)
 # ---------------------------------------------------------------------------
 
+
 class ICEEngineModel(SubsystemModel):
     """Internal combustion engine model with BSFC-based fuel consumption.
 
@@ -33,11 +34,20 @@ class ICEEngineModel(SubsystemModel):
 
     def parameter_names(self) -> list[str]:
         return [
-            "engine_type", "displacement_cc", "max_power_kw", "max_power_rpm",
-            "bsfc_cruise_g_kwh", "cooling_type", "altitude_compensation",
-            "generator_output_w", "generator_output_intermittent_w",
-            "hybrid_boost_available", "hybrid_boost_power_kw",
-            "preheat_required", "preheat_time_min", "preheat_power_w",
+            "engine_type",
+            "displacement_cc",
+            "max_power_kw",
+            "max_power_rpm",
+            "bsfc_cruise_g_kwh",
+            "cooling_type",
+            "altitude_compensation",
+            "generator_output_w",
+            "generator_output_intermittent_w",
+            "hybrid_boost_available",
+            "hybrid_boost_power_kw",
+            "preheat_required",
+            "preheat_time_min",
+            "preheat_power_w",
         ]
 
     def state_names(self) -> list[str]:
@@ -45,10 +55,14 @@ class ICEEngineModel(SubsystemModel):
 
     def output_names(self) -> list[str]:
         return [
-            "engine_power_available_kw", "engine_power_required_kw",
-            "fuel_flow_rate_g_hr", "fuel_flow_rate_l_hr",
-            "engine_rpm", "throttle_pct",
-            "generator_power_w", "cht_estimated_c",
+            "engine_power_available_kw",
+            "engine_power_required_kw",
+            "fuel_flow_rate_g_hr",
+            "fuel_flow_rate_l_hr",
+            "engine_rpm",
+            "throttle_pct",
+            "generator_power_w",
+            "cht_estimated_c",
             "engine_feasible",
         ]
 
@@ -118,10 +132,14 @@ class ICEEngineModel(SubsystemModel):
                 "engine_feasible": float(feasible),
             },
             units={
-                "engine_power_available_kw": "kW", "engine_power_required_kw": "kW",
-                "fuel_flow_rate_g_hr": "g/hr", "fuel_flow_rate_l_hr": "L/hr",
-                "engine_rpm": "rpm", "throttle_pct": "%",
-                "generator_power_w": "W", "cht_estimated_c": "degC",
+                "engine_power_available_kw": "kW",
+                "engine_power_required_kw": "kW",
+                "fuel_flow_rate_g_hr": "g/hr",
+                "fuel_flow_rate_l_hr": "L/hr",
+                "engine_rpm": "rpm",
+                "throttle_pct": "%",
+                "generator_power_w": "W",
+                "cht_estimated_c": "degC",
                 "engine_feasible": "1",
             },
             feasible=feasible,
@@ -132,13 +150,17 @@ class ICEEngineModel(SubsystemModel):
 # Electric rotor model (VTOL lift motors, same as before but with ICE context)
 # ---------------------------------------------------------------------------
 
+
 class RotorModel(SubsystemModel):
     """BET-based rotor thrust/torque model for electric VTOL lift motors."""
 
     def parameter_names(self) -> list[str]:
         return [
-            "rotor_count", "rotor_diameter_m", "blade_count",
-            "prop_ct_static", "prop_cp_static",
+            "rotor_count",
+            "rotor_diameter_m",
+            "blade_count",
+            "prop_ct_static",
+            "prop_cp_static",
         ]
 
     def state_names(self) -> list[str]:
@@ -146,8 +168,11 @@ class RotorModel(SubsystemModel):
 
     def output_names(self) -> list[str]:
         return [
-            "rotor_thrust_total_N", "rotor_torque_total_Nm",
-            "rotor_power_total_W", "rotor_rpm", "rotor_efficiency",
+            "rotor_thrust_total_N",
+            "rotor_torque_total_Nm",
+            "rotor_power_total_W",
+            "rotor_rpm",
+            "rotor_efficiency",
             "thrust_available_N",
         ]
 
@@ -166,28 +191,33 @@ class RotorModel(SubsystemModel):
         if rho is None or rho <= 0:
             rho = isa_density(alt)
         R = D / 2.0
-        A_disk = np.pi * R ** 2
+        A_disk = np.pi * R**2
 
         thrust_per_rotor = max(thrust_required_N / n_rotors, 0.01)
 
-        n_rps = np.sqrt(thrust_per_rotor / (ct0 * rho * D ** 4 + 1e-12))
+        n_rps = np.sqrt(thrust_per_rotor / (ct0 * rho * D**4 + 1e-12))
         rpm = n_rps * 60.0
 
         v_tip = n_rps * np.pi * D
         mu = v_fwd / (v_tip + 1e-6) if v_tip > 0.1 else 0.0
-        ct_effective = ct0 * (1.0 - 0.3 * mu ** 2)
-        cp_effective = cp0 * (1.0 + 0.5 * mu ** 2)
+        ct_effective = ct0 * (1.0 - 0.3 * mu**2)
+        cp_effective = cp0 * (1.0 + 0.5 * mu**2)
 
-        thrust_actual = ct_effective * rho * n_rps ** 2 * D ** 4 * n_rotors
-        torque_per = cp_effective * rho * n_rps ** 2 * D ** 5 / (2 * np.pi)
+        thrust_actual = ct_effective * rho * n_rps**2 * D**4 * n_rotors
+        torque_per = cp_effective * rho * n_rps**2 * D**5 / (2 * np.pi)
         torque_total = torque_per * n_rotors
-        power_total = cp_effective * rho * n_rps ** 3 * D ** 5 * n_rotors
+        power_total = cp_effective * rho * n_rps**3 * D**5 * n_rotors
 
         rpm_max = 12000.0
         n_max = rpm_max / 60.0
-        thrust_available = ct0 * rho * n_max ** 2 * D ** 4 * n_rotors
+        thrust_available = ct0 * rho * n_max**2 * D**4 * n_rotors
 
-        efficiency = (thrust_actual * (thrust_actual / (2 * rho * A_disk * n_rotors + 1e-6)) ** 0.5) / (power_total + 1e-6) if power_total > 1.0 else 0.0
+        efficiency = (
+            (thrust_actual * (thrust_actual / (2 * rho * A_disk * n_rotors + 1e-6)) ** 0.5)
+            / (power_total + 1e-6)
+            if power_total > 1.0
+            else 0.0
+        )
 
         return ModelOutput(
             values={
@@ -199,9 +229,12 @@ class RotorModel(SubsystemModel):
                 "thrust_available_N": thrust_available,
             },
             units={
-                "rotor_thrust_total_N": "N", "rotor_torque_total_Nm": "N.m",
-                "rotor_power_total_W": "W", "rotor_rpm": "rpm",
-                "rotor_efficiency": "1", "thrust_available_N": "N",
+                "rotor_thrust_total_N": "N",
+                "rotor_torque_total_Nm": "N.m",
+                "rotor_power_total_W": "W",
+                "rotor_rpm": "rpm",
+                "rotor_efficiency": "1",
+                "thrust_available_N": "N",
             },
         )
 
@@ -224,7 +257,9 @@ class MotorElectricalModel(SubsystemModel):
         kt = require_param(params, "motor_kt", "MotorElectricalModel")
 
         rpm = require_param(conditions, "rotor_rpm", "MotorElectricalModel")
-        torque_per_motor = require_param(conditions, "rotor_torque_total_Nm", "MotorElectricalModel")
+        torque_per_motor = require_param(
+            conditions, "rotor_torque_total_Nm", "MotorElectricalModel"
+        )
         n_rotors = int(require_param(conditions, "rotor_count", "MotorElectricalModel"))
 
         if n_rotors > 0 and torque_per_motor > 0:
@@ -247,8 +282,10 @@ class MotorElectricalModel(SubsystemModel):
                 "motor_efficiency": min(eff, 1.0),
             },
             units={
-                "motor_current_A": "A", "motor_voltage_V": "V",
-                "motor_power_elec_W": "W", "motor_efficiency": "1",
+                "motor_current_A": "A",
+                "motor_voltage_V": "V",
+                "motor_power_elec_W": "W",
+                "motor_efficiency": "1",
             },
         )
 
@@ -272,7 +309,7 @@ class ESCLossModel(SubsystemModel):
         I_total = require_param(conditions, "motor_current_A", "ESCLossModel")
         P_motor = require_param(conditions, "motor_power_elec_W", "ESCLossModel")
 
-        conduction_loss = I_total ** 2 * R_esc
+        conduction_loss = I_total**2 * R_esc
         switching_loss = P_motor * sw_pct
         esc_loss = conduction_loss + switching_loss
 

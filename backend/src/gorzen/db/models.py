@@ -92,7 +92,9 @@ class AuditEventDB(Base):
     event_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     actor: Mapped[str] = mapped_column(String(255), default="system")
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
-    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
 
 
 class TelemetryLogDB(Base):
@@ -110,7 +112,9 @@ class TelemetryLogDB(Base):
     record_count: Mapped[int] = mapped_column(Integer, default=0)
     topics: Mapped[list] = mapped_column(JSON, default=list)
     log_metadata: Mapped[dict] = mapped_column("log_metadata", JSON, default=dict)
-    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    uploaded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class PredictionSetDB(Base):
@@ -141,4 +145,6 @@ class ValidationRunDB(Base):
     deltas: Mapped[dict] = mapped_column(JSON, nullable=False)
     confidence_update: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     source: Mapped[str] = mapped_column(String(32), nullable=False, default="simulation")
-    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

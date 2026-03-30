@@ -27,6 +27,7 @@ async def read_upload_with_limit(file: UploadFile, max_bytes: int = MAX_UPLOAD_B
         raise HTTPException(413, f"File too large (max {max_bytes // (1024 * 1024)} MB)")
     return data
 
+
 router = APIRouter()
 
 
@@ -93,14 +94,16 @@ async def list_calibration_missions() -> list[dict]:
     missions = []
     for mission_type, factory in ALL_CALIBRATION_MISSIONS.items():
         defn = factory()
-        missions.append({
-            "type": defn.mission_type.value,
-            "name": defn.name,
-            "description": defn.description,
-            "estimated_duration_min": defn.estimated_duration_min,
-            "calibrates_parameters": defn.calibrates_parameters,
-            "n_steps": len(defn.steps),
-        })
+        missions.append(
+            {
+                "type": defn.mission_type.value,
+                "name": defn.name,
+                "description": defn.description,
+                "estimated_duration_min": defn.estimated_duration_min,
+                "calibrates_parameters": defn.calibrates_parameters,
+                "n_steps": len(defn.steps),
+            }
+        )
     return missions
 
 
@@ -119,7 +122,11 @@ async def list_runs(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid twin_id") from None
     rows = await calibration_repo.list_calibration_runs(
-        session, twin_id=uid, mission_type=mission_type, limit=limit, offset=offset,
+        session,
+        twin_id=uid,
+        mission_type=mission_type,
+        limit=limit,
+        offset=offset,
     )
     return [_run_to_dict(r) for r in rows]
 
@@ -197,6 +204,7 @@ async def calibrate_battery(req: BatteryCalibrateRequest) -> BatteryCalibrateRes
     missing = [c for c in required if c not in df.columns]
     if missing:
         from fastapi import HTTPException
+
         raise HTTPException(status_code=400, detail=f"Missing columns: {missing}")
 
     model, diag = fit_battery_model(
@@ -226,9 +234,7 @@ class BatteryEstimateResponse(BaseModel):
 async def estimate_battery(req: BatteryEstimateRequest) -> BatteryEstimateResponse:
     """Estimate flight time from calibrated battery model."""
     m = BatteryLifeModel.from_dict(req.model)
-    total = m.predict_total_time_min(
-        req.payload_kg, req.ground_speed_mps, req.headwind_mps
-    )
+    total = m.predict_total_time_min(req.payload_kg, req.ground_speed_mps, req.headwind_mps)
     remaining = None
     soc_pct = None
     if req.voltage_per_cell is not None:
@@ -239,6 +245,7 @@ async def estimate_battery(req: BatteryEstimateRequest) -> BatteryEstimateRespon
             req.voltage_per_cell,
         )
         from gorzen.calibration.battery_life import soc_from_voltage_per_cell
+
         soc_pct = soc_from_voltage_per_cell(req.voltage_per_cell) * 100
     return BatteryEstimateResponse(
         total_time_min=total,

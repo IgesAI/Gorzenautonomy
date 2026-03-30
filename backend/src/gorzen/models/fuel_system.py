@@ -35,8 +35,12 @@ class FuelSystemModel(SubsystemModel):
 
     def parameter_names(self) -> list[str]:
         return [
-            "fuel_type", "fuel_density_kg_l", "tank_capacity_l",
-            "tank_capacity_kg", "usable_fuel_pct", "fuel_reserve_pct",
+            "fuel_type",
+            "fuel_density_kg_l",
+            "tank_capacity_l",
+            "tank_capacity_kg",
+            "usable_fuel_pct",
+            "fuel_reserve_pct",
             "premix_ratio",
         ]
 
@@ -45,18 +49,22 @@ class FuelSystemModel(SubsystemModel):
 
     def output_names(self) -> list[str]:
         return [
-            "fuel_remaining_kg", "fuel_remaining_l", "fuel_remaining_pct",
-            "fuel_endurance_hr", "fuel_range_nmi",
-            "usable_fuel_remaining_kg", "reserve_fuel_kg",
-            "weight_reduction_kg", "current_vehicle_mass_kg",
+            "fuel_remaining_kg",
+            "fuel_remaining_l",
+            "fuel_remaining_pct",
+            "fuel_endurance_hr",
+            "fuel_range_nmi",
+            "usable_fuel_remaining_kg",
+            "reserve_fuel_kg",
+            "weight_reduction_kg",
+            "current_vehicle_mass_kg",
             "fuel_feasible",
         ]
 
     def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:
         if "fuel_type" not in params or params["fuel_type"] is None:
             raise ValueError(
-                "INSUFFICIENT_DATA: 'fuel_type' is required but missing"
-                " (context: FuelSystemModel)"
+                "INSUFFICIENT_DATA: 'fuel_type' is required but missing (context: FuelSystemModel)"
             )
         str(params["fuel_type"])
         density = require_param(params, "fuel_density_kg_l", "FuelSystemModel")
@@ -116,11 +124,15 @@ class FuelSystemModel(SubsystemModel):
                 "fuel_feasible": float(feasible),
             },
             units={
-                "fuel_remaining_kg": "kg", "fuel_remaining_l": "L",
+                "fuel_remaining_kg": "kg",
+                "fuel_remaining_l": "L",
                 "fuel_remaining_pct": "%",
-                "fuel_endurance_hr": "hr", "fuel_range_nmi": "nmi",
-                "usable_fuel_remaining_kg": "kg", "reserve_fuel_kg": "kg",
-                "weight_reduction_kg": "kg", "current_vehicle_mass_kg": "kg",
+                "fuel_endurance_hr": "hr",
+                "fuel_range_nmi": "nmi",
+                "usable_fuel_remaining_kg": "kg",
+                "reserve_fuel_kg": "kg",
+                "weight_reduction_kg": "kg",
+                "current_vehicle_mass_kg": "kg",
                 "fuel_feasible": "1",
             },
             feasible=feasible,
@@ -139,9 +151,12 @@ class GeneratorModel(SubsystemModel):
 
     def parameter_names(self) -> list[str]:
         return [
-            "generator_output_w", "generator_output_intermittent_w",
-            "generator_voltage_v", "generator_charge_rate_w",
-            "hybrid_boost_available", "hybrid_boost_power_kw",
+            "generator_output_w",
+            "generator_output_intermittent_w",
+            "generator_voltage_v",
+            "generator_charge_rate_w",
+            "hybrid_boost_available",
+            "hybrid_boost_power_kw",
         ]
 
     def state_names(self) -> list[str]:
@@ -149,8 +164,10 @@ class GeneratorModel(SubsystemModel):
 
     def output_names(self) -> list[str]:
         return [
-            "generator_power_available_w", "generator_charging_w",
-            "hybrid_boost_active", "total_electrical_budget_w",
+            "generator_power_available_w",
+            "generator_charging_w",
+            "hybrid_boost_active",
+            "total_electrical_budget_w",
             "electrical_surplus_w",
         ]
 
@@ -184,7 +201,9 @@ class GeneratorModel(SubsystemModel):
         if has_hybrid and engine_load_pct > 0.85:
             boost_active = 1.0
 
-        total_budget = gen_available + (battery_soc / 100.0 * 500.0)  # battery contribution estimate
+        total_budget = gen_available + (
+            battery_soc / 100.0 * 500.0
+        )  # battery contribution estimate
 
         return ModelOutput(
             values={

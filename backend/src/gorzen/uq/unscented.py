@@ -62,13 +62,13 @@ class UnscentedTransform:
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Generate sigma points and weights."""
         n = len(mean)
-        lam = self.alpha ** 2 * (n + self.kappa) - n
+        lam = self.alpha**2 * (n + self.kappa) - n
 
         # Weights
         wm = np.full(2 * n + 1, 0.5 / (n + lam))
         wc = np.full(2 * n + 1, 0.5 / (n + lam))
         wm[0] = lam / (n + lam)
-        wc[0] = lam / (n + lam) + (1 - self.alpha ** 2 + self.beta)
+        wc[0] = lam / (n + lam) + (1 - self.alpha**2 + self.beta)
 
         # Sigma points
         try:

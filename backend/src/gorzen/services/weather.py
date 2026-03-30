@@ -20,6 +20,7 @@ OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 @dataclass
 class WindLayer:
     """Wind conditions at a specific altitude."""
+
     height_m: float
     speed_ms: float
     direction_deg: float
@@ -29,6 +30,7 @@ class WindLayer:
 @dataclass
 class WeatherConditions:
     """Complete weather conditions for a location."""
+
     latitude: float
     longitude: float
     temperature_c: float
@@ -74,7 +76,9 @@ def _compute_air_density(temp_c: float, pressure_hpa: float, humidity_pct: float
     T_k = temp_c + 273.15
     P_pa = pressure_hpa * 100.0
     # Saturation vapor pressure (Buck equation)
-    e_sat = 611.21 * __import__('math').exp((18.678 - temp_c / 234.5) * (temp_c / (257.14 + temp_c)))
+    e_sat = 611.21 * __import__("math").exp(
+        (18.678 - temp_c / 234.5) * (temp_c / (257.14 + temp_c))
+    )
     e = e_sat * humidity_pct / 100.0
     # Virtual temperature
     Tv = T_k / (1 - 0.378 * e / P_pa)
@@ -94,23 +98,25 @@ async def fetch_weather(
     params = {
         "latitude": lat,
         "longitude": lon,
-        "current": ",".join([
-            "temperature_2m",
-            "relative_humidity_2m",
-            "surface_pressure",
-            "cloud_cover",
-            "visibility",
-            "precipitation",
-            "wind_speed_10m",
-            "wind_direction_10m",
-            "wind_gusts_10m",
-            "wind_speed_80m",
-            "wind_direction_80m",
-            "wind_speed_120m",
-            "wind_direction_120m",
-            "wind_speed_180m",
-            "wind_direction_180m",
-        ]),
+        "current": ",".join(
+            [
+                "temperature_2m",
+                "relative_humidity_2m",
+                "surface_pressure",
+                "cloud_cover",
+                "visibility",
+                "precipitation",
+                "wind_speed_10m",
+                "wind_direction_10m",
+                "wind_gusts_10m",
+                "wind_speed_80m",
+                "wind_direction_80m",
+                "wind_speed_120m",
+                "wind_direction_120m",
+                "wind_speed_180m",
+                "wind_direction_180m",
+            ]
+        ),
         "wind_speed_unit": "ms",
         "timezone": "UTC",
     }

@@ -23,14 +23,7 @@ def lipo_ocv(soc: float) -> float:
     - Chen & Rincon-Mora, "Accurate Electrical Battery Model", IEEE TEC 2006
     """
     soc = np.clip(soc, 0.0, 1.0)
-    return (
-        3.0
-        + 2.035 * soc
-        - 5.325 * soc ** 2
-        + 12.740 * soc ** 3
-        - 12.880 * soc ** 4
-        + 4.630 * soc ** 5
-    )
+    return 3.0 + 2.035 * soc - 5.325 * soc**2 + 12.740 * soc**3 - 12.880 * soc**4 + 4.630 * soc**5
 
 
 class BatteryModel(SubsystemModel):
@@ -42,10 +35,15 @@ class BatteryModel(SubsystemModel):
 
     def parameter_names(self) -> list[str]:
         return [
-            "cell_count_s", "cell_count_p", "capacity_ah",
-            "internal_resistance_mohm", "soh_pct",
-            "wiring_loss_mohm", "reserve_policy_pct",
-            "r1_mohm", "c1_f",
+            "cell_count_s",
+            "cell_count_p",
+            "capacity_ah",
+            "internal_resistance_mohm",
+            "soh_pct",
+            "wiring_loss_mohm",
+            "reserve_policy_pct",
+            "r1_mohm",
+            "c1_f",
         ]
 
     def state_names(self) -> list[str]:
@@ -53,10 +51,15 @@ class BatteryModel(SubsystemModel):
 
     def output_names(self) -> list[str]:
         return [
-            "pack_voltage_V", "terminal_voltage_V",
-            "soc_pct", "power_draw_W", "endurance_min",
-            "energy_remaining_Wh", "reserve_time_min",
-            "voltage_sag_V", "battery_feasible",
+            "pack_voltage_V",
+            "terminal_voltage_V",
+            "soc_pct",
+            "power_draw_W",
+            "endurance_min",
+            "energy_remaining_Wh",
+            "reserve_time_min",
+            "voltage_sag_V",
+            "battery_feasible",
         ]
 
     def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:
@@ -129,10 +132,14 @@ class BatteryModel(SubsystemModel):
                 "battery_feasible": float(feasible),
             },
             units={
-                "pack_voltage_V": "V", "terminal_voltage_V": "V",
-                "soc_pct": "%", "power_draw_W": "W",
-                "endurance_min": "min", "energy_remaining_Wh": "Wh",
-                "reserve_time_min": "min", "voltage_sag_V": "V",
+                "pack_voltage_V": "V",
+                "terminal_voltage_V": "V",
+                "soc_pct": "%",
+                "power_draw_W": "W",
+                "endurance_min": "min",
+                "energy_remaining_Wh": "Wh",
+                "reserve_time_min": "min",
+                "voltage_sag_V": "V",
                 "battery_feasible": "1",
             },
             feasible=feasible,
@@ -161,10 +168,10 @@ class BatteryAgingModel:
         self.delta = delta
 
     def capacity_fraction(self, cycles: float) -> float:
-        return max(1.0 - self.alpha * cycles ** self.beta, 0.5)
+        return max(1.0 - self.alpha * cycles**self.beta, 0.5)
 
     def resistance_factor(self, cycles: float) -> float:
-        return 1.0 + self.gamma * cycles ** self.delta
+        return 1.0 + self.gamma * cycles**self.delta
 
     def soh_pct(self, cycles: float) -> float:
         return self.capacity_fraction(cycles) * 100.0
@@ -208,7 +215,7 @@ class BatteryUKF:
         predicted_v = ocv - v_rc
         y = measured_voltage - predicted_v
         # Linearized dOCV/dSoC from 5th-order polynomial
-        docv = 2.035 - 10.65 * soc + 38.22 * soc ** 2 - 51.52 * soc ** 3 + 23.15 * soc ** 4
+        docv = 2.035 - 10.65 * soc + 38.22 * soc**2 - 51.52 * soc**3 + 23.15 * soc**4
         H = np.array([[self.n_s * docv, -1.0]])
         S = H @ self.P @ H.T + self.R_meas
         K = self.P @ H.T / (S[0, 0] + 1e-12)

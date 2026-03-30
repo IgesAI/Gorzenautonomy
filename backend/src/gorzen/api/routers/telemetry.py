@@ -6,7 +6,15 @@ import asyncio
 import time
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,6 +46,7 @@ async def read_upload_with_limit(file: UploadFile, max_bytes: int = MAX_UPLOAD_B
         raise HTTPException(413, f"File too large (max {max_bytes // (1024 * 1024)} MB)")
     return data
 
+
 router = APIRouter()
 # WebSocket is registered separately without global HTTP auth (use ?token= when JWT is enabled).
 ws_router = APIRouter()
@@ -46,6 +55,7 @@ internal_router = APIRouter()
 
 
 # --- Connection ---
+
 
 class ConnectRequest(BaseModel):
     address: str = "udp://:14540"
@@ -58,7 +68,9 @@ async def connect_drone(request: ConnectRequest) -> dict[str, Any]:
     return {
         "connected": success,
         "address": request.address,
-        "message": "Connected successfully" if success else "Connection failed — check address and drone status",
+        "message": "Connected successfully"
+        if success
+        else "Connection failed — check address and drone status",
     }
 
 
@@ -83,6 +95,7 @@ async def get_connection_status() -> dict[str, Any]:
 
 
 # --- Live Telemetry ---
+
 
 @router.get("/snapshot")
 async def get_telemetry_snapshot() -> dict[str, Any]:
@@ -181,6 +194,7 @@ async def telemetry_websocket(ws: WebSocket) -> None:
 
 # --- PX4 Parameter Mapping ---
 
+
 @router.get("/params/map")
 async def get_parameter_map() -> dict[str, Any]:
     """Get the full twin↔PX4 parameter mapping table."""
@@ -220,6 +234,7 @@ async def convert_px4_to_twin(request: PX4ParamsRequest) -> dict[str, Any]:
 
 
 # --- Flight Logs ---
+
 
 @router.post("/logs/upload")
 async def upload_flight_log(file: UploadFile) -> dict[str, Any]:

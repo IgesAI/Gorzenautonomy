@@ -74,8 +74,11 @@ MODEL_CATALOG: list[ModelSpec] = [
         flops_gflops=8.7,
         memory_mb=6.3,
         supports_defect_classes=[
-            DefectClass.CRACK, DefectClass.CORROSION, DefectClass.PERSON,
-            DefectClass.VEHICLE, DefectClass.GENERIC,
+            DefectClass.CRACK,
+            DefectClass.CORROSION,
+            DefectClass.PERSON,
+            DefectClass.VEHICLE,
+            DefectClass.GENERIC,
         ],
         edge_compatible=True,
         description="Ultra-fast edge model for real-time detection on embedded GPU (Jetson Orin Nano).",
@@ -90,8 +93,12 @@ MODEL_CATALOG: list[ModelSpec] = [
         flops_gflops=28.6,
         memory_mb=22.5,
         supports_defect_classes=[
-            DefectClass.CRACK, DefectClass.CORROSION, DefectClass.VEGETATION,
-            DefectClass.PERSON, DefectClass.VEHICLE, DefectClass.STRUCTURAL_DAMAGE,
+            DefectClass.CRACK,
+            DefectClass.CORROSION,
+            DefectClass.VEGETATION,
+            DefectClass.PERSON,
+            DefectClass.VEHICLE,
+            DefectClass.STRUCTURAL_DAMAGE,
             DefectClass.GENERIC,
         ],
         edge_compatible=True,
@@ -107,9 +114,14 @@ MODEL_CATALOG: list[ModelSpec] = [
         flops_gflops=165.2,
         memory_mb=87.7,
         supports_defect_classes=[
-            DefectClass.CRACK, DefectClass.CORROSION, DefectClass.VEGETATION,
-            DefectClass.THERMAL_ANOMALY, DefectClass.PERSON, DefectClass.VEHICLE,
-            DefectClass.STRUCTURAL_DAMAGE, DefectClass.GENERIC,
+            DefectClass.CRACK,
+            DefectClass.CORROSION,
+            DefectClass.VEGETATION,
+            DefectClass.THERMAL_ANOMALY,
+            DefectClass.PERSON,
+            DefectClass.VEHICLE,
+            DefectClass.STRUCTURAL_DAMAGE,
+            DefectClass.GENERIC,
         ],
         edge_compatible=True,
         description="High-accuracy model usable on powerful edge GPU or cloud.",
@@ -124,8 +136,11 @@ MODEL_CATALOG: list[ModelSpec] = [
         flops_gflops=11.0,
         memory_mb=32.0,
         supports_defect_classes=[
-            DefectClass.CRACK, DefectClass.CORROSION, DefectClass.PERSON,
-            DefectClass.VEHICLE, DefectClass.GENERIC,
+            DefectClass.CRACK,
+            DefectClass.CORROSION,
+            DefectClass.PERSON,
+            DefectClass.VEHICLE,
+            DefectClass.GENERIC,
         ],
         edge_compatible=True,
         description="Efficient two-stage detector, good for structured defect detection.",
@@ -140,9 +155,14 @@ MODEL_CATALOG: list[ModelSpec] = [
         flops_gflops=500.0,
         memory_mb=2048.0,
         supports_defect_classes=[
-            DefectClass.CRACK, DefectClass.CORROSION, DefectClass.VEGETATION,
-            DefectClass.THERMAL_ANOMALY, DefectClass.PERSON, DefectClass.VEHICLE,
-            DefectClass.STRUCTURAL_DAMAGE, DefectClass.GENERIC,
+            DefectClass.CRACK,
+            DefectClass.CORROSION,
+            DefectClass.VEGETATION,
+            DefectClass.THERMAL_ANOMALY,
+            DefectClass.PERSON,
+            DefectClass.VEHICLE,
+            DefectClass.STRUCTURAL_DAMAGE,
+            DefectClass.GENERIC,
         ],
         edge_compatible=False,
         description="Open-vocabulary detection + segmentation. Zero-shot capable for novel defect types.",
@@ -157,9 +177,14 @@ MODEL_CATALOG: list[ModelSpec] = [
         flops_gflops=300.0,
         memory_mb=1500.0,
         supports_defect_classes=[
-            DefectClass.CRACK, DefectClass.CORROSION, DefectClass.VEGETATION,
-            DefectClass.THERMAL_ANOMALY, DefectClass.PERSON, DefectClass.VEHICLE,
-            DefectClass.STRUCTURAL_DAMAGE, DefectClass.GENERIC,
+            DefectClass.CRACK,
+            DefectClass.CORROSION,
+            DefectClass.VEGETATION,
+            DefectClass.THERMAL_ANOMALY,
+            DefectClass.PERSON,
+            DefectClass.VEHICLE,
+            DefectClass.STRUCTURAL_DAMAGE,
+            DefectClass.GENERIC,
         ],
         edge_compatible=False,
         description="Microsoft VLM with strong captioning and grounding for inspection reports.",
@@ -174,9 +199,14 @@ MODEL_CATALOG: list[ModelSpec] = [
         flops_gflops=0.0,  # API-based
         memory_mb=0.0,
         supports_defect_classes=[
-            DefectClass.CRACK, DefectClass.CORROSION, DefectClass.VEGETATION,
-            DefectClass.THERMAL_ANOMALY, DefectClass.PERSON, DefectClass.VEHICLE,
-            DefectClass.STRUCTURAL_DAMAGE, DefectClass.GENERIC,
+            DefectClass.CRACK,
+            DefectClass.CORROSION,
+            DefectClass.VEGETATION,
+            DefectClass.THERMAL_ANOMALY,
+            DefectClass.PERSON,
+            DefectClass.VEHICLE,
+            DefectClass.STRUCTURAL_DAMAGE,
+            DefectClass.GENERIC,
         ],
         edge_compatible=False,
         description="Highest accuracy VLM via API. Best for detailed inspection reports and rare defects.",
@@ -253,7 +283,11 @@ def recommend_model(
 
         # Score the model
         det_prob = _estimate_detection_probability(
-            model, pixels_on_target, niirs, gsd_cm, target_classes[0],
+            model,
+            pixels_on_target,
+            niirs,
+            gsd_cm,
+            target_classes[0],
         )
 
         candidates.append((model, det_prob))
@@ -262,7 +296,10 @@ def recommend_model(
         # Fall back to the most capable cloud model
         fallback = MODEL_CATALOG[-1]
         det_prob = _estimate_detection_probability(
-            fallback, pixels_on_target, niirs, gsd_cm,
+            fallback,
+            pixels_on_target,
+            niirs,
+            gsd_cm,
             target_classes[0] if target_classes else DefectClass.GENERIC,
         )
         return ModelRecommendation(

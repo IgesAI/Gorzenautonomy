@@ -35,8 +35,10 @@ def _validate_connection_url(url: str) -> None:
         except ValueError:
             pass
 
+
 try:
     from mavsdk.mission_raw import MissionItem as RawMissionItem
+
     HAS_MAVSDK = True
 except ImportError:
     HAS_MAVSDK = False
@@ -100,10 +102,7 @@ async def upload_mission(req: MissionUploadRequest) -> MissionUploadResponse:
     except RuntimeError as e:
         raise HTTPException(status_code=501, detail=str(e)) from e
 
-    raw_items = [
-        _mavlink_to_raw_item(item, seq)
-        for seq, item in enumerate(req.mavlink_items)
-    ]
+    raw_items = [_mavlink_to_raw_item(item, seq) for seq, item in enumerate(req.mavlink_items)]
     await drone.mission_raw.upload_mission(raw_items)
     return MissionUploadResponse(
         success=True,

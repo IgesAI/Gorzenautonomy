@@ -16,9 +16,13 @@ class CommsModel(SubsystemModel):
 
     def parameter_names(self) -> list[str]:
         return [
-            "tx_power_dbm", "antenna_gain_dbi", "receiver_sensitivity_dbm",
-            "manet_range_nmi", "manet_bandwidth_mbps",
-            "satcom_available", "satcom_bandwidth_mbps",
+            "tx_power_dbm",
+            "antenna_gain_dbi",
+            "receiver_sensitivity_dbm",
+            "manet_range_nmi",
+            "manet_bandwidth_mbps",
+            "satcom_available",
+            "satcom_bandwidth_mbps",
         ]
 
     def state_names(self) -> list[str]:
@@ -26,9 +30,12 @@ class CommsModel(SubsystemModel):
 
     def output_names(self) -> list[str]:
         return [
-            "link_margin_db", "effective_range_km",
-            "achievable_bitrate_mbps", "compression_quality_factor",
-            "comms_latency_ms", "link_feasible",
+            "link_margin_db",
+            "effective_range_km",
+            "achievable_bitrate_mbps",
+            "compression_quality_factor",
+            "comms_latency_ms",
+            "link_feasible",
         ]
 
     def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:
@@ -52,7 +59,9 @@ class CommsModel(SubsystemModel):
 
         max_range_km = manet_range_nmi * 1.852
         # HEURISTIC: link margin policy
-        effective_range = max_range_km if link_margin > 6.0 else max(0, max_range_km * (link_margin / 6.0))
+        effective_range = (
+            max_range_km if link_margin > 6.0 else max(0, max_range_km * (link_margin / 6.0))
+        )
 
         # Available bandwidth: use MANET bandwidth, fall back to SATCOM if out of MANET range
         if distance_km <= max_range_km:
@@ -83,10 +92,12 @@ class CommsModel(SubsystemModel):
                 "link_feasible": float(link_feasible),
             },
             units={
-                "link_margin_db": "dB", "effective_range_km": "km",
+                "link_margin_db": "dB",
+                "effective_range_km": "km",
                 "achievable_bitrate_mbps": "Mbps",
                 "compression_quality_factor": "1",
-                "comms_latency_ms": "ms", "link_feasible": "1",
+                "comms_latency_ms": "ms",
+                "link_feasible": "1",
             },
             feasible=link_feasible,
         )

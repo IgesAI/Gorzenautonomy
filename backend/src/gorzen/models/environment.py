@@ -28,7 +28,9 @@ class DrydenTurbulence:
         self.sigma_u = self.sigma_w / (0.177 + 0.000823 * h) ** 0.4
         self.sigma_v = self.sigma_u
 
-    def sample(self, V: float, dt: float, n_steps: int, rng: np.random.Generator | None = None) -> np.ndarray:
+    def sample(
+        self, V: float, dt: float, n_steps: int, rng: np.random.Generator | None = None
+    ) -> np.ndarray:
         """Generate turbulence velocity samples [n_steps x 3] (u, v, w components).
         Uses fixed seed when rng is None for deterministic behavior."""
         if rng is None:
@@ -43,9 +45,18 @@ class DrydenTurbulence:
         aw = V / (self.Lw + 1e-6)
 
         for i in range(1, n_steps):
-            turb[i, 0] = np.exp(-au * dt) * turb[i - 1, 0] + self.sigma_u * np.sqrt(1 - np.exp(-2 * au * dt)) * white[i, 0]
-            turb[i, 1] = np.exp(-av * dt) * turb[i - 1, 1] + self.sigma_v * np.sqrt(1 - np.exp(-2 * av * dt)) * white[i, 1]
-            turb[i, 2] = np.exp(-aw * dt) * turb[i - 1, 2] + self.sigma_w * np.sqrt(1 - np.exp(-2 * aw * dt)) * white[i, 2]
+            turb[i, 0] = (
+                np.exp(-au * dt) * turb[i - 1, 0]
+                + self.sigma_u * np.sqrt(1 - np.exp(-2 * au * dt)) * white[i, 0]
+            )
+            turb[i, 1] = (
+                np.exp(-av * dt) * turb[i - 1, 1]
+                + self.sigma_v * np.sqrt(1 - np.exp(-2 * av * dt)) * white[i, 1]
+            )
+            turb[i, 2] = (
+                np.exp(-aw * dt) * turb[i - 1, 2]
+                + self.sigma_w * np.sqrt(1 - np.exp(-2 * aw * dt)) * white[i, 2]
+            )
 
         return turb
 
@@ -68,7 +79,9 @@ class VonKarmanTurbulence:
         self.sigma_w = 0.1 * wind_speed_6m
         self.sigma_u = self.sigma_w / (0.177 + 0.000823 * h) ** 0.4
 
-    def sample(self, V: float, dt: float, n_steps: int, rng: np.random.Generator | None = None) -> np.ndarray:
+    def sample(
+        self, V: float, dt: float, n_steps: int, rng: np.random.Generator | None = None
+    ) -> np.ndarray:
         """Generate turbulence samples. Uses fixed seed when rng is None for deterministic behavior."""
         if rng is None:
             rng = np.random.default_rng(42)
@@ -79,9 +92,15 @@ class VonKarmanTurbulence:
         au = 1.339 * V / (self.Lu + 1e-6)
         aw = 1.339 * V / (self.Lw + 1e-6)
         for i in range(1, n_steps):
-            turb[i, 0] = (1 - au * dt) * turb[i - 1, 0] + self.sigma_u * np.sqrt(2 * au * dt) * white[i, 0]
-            turb[i, 1] = (1 - au * dt) * turb[i - 1, 1] + self.sigma_u * np.sqrt(2 * au * dt) * white[i, 1]
-            turb[i, 2] = (1 - aw * dt) * turb[i - 1, 2] + self.sigma_w * np.sqrt(2 * aw * dt) * white[i, 2]
+            turb[i, 0] = (1 - au * dt) * turb[i - 1, 0] + self.sigma_u * np.sqrt(
+                2 * au * dt
+            ) * white[i, 0]
+            turb[i, 1] = (1 - au * dt) * turb[i - 1, 1] + self.sigma_u * np.sqrt(
+                2 * au * dt
+            ) * white[i, 1]
+            turb[i, 2] = (1 - aw * dt) * turb[i - 1, 2] + self.sigma_w * np.sqrt(
+                2 * aw * dt
+            ) * white[i, 2]
         return turb
 
 
@@ -98,8 +117,12 @@ class EnvironmentModel(SubsystemModel):
 
     def parameter_names(self) -> list[str]:
         return [
-            "wind_model", "wind_speed_ms", "gust_intensity",
-            "wind_direction_deg", "temperature_c", "pressure_hpa",
+            "wind_model",
+            "wind_speed_ms",
+            "gust_intensity",
+            "wind_direction_deg",
+            "temperature_c",
+            "pressure_hpa",
             "ambient_light_lux",
         ]
 
@@ -108,8 +131,11 @@ class EnvironmentModel(SubsystemModel):
 
     def output_names(self) -> list[str]:
         return [
-            "headwind_ms", "crosswind_ms", "turbulence_intensity",
-            "air_density_kgm3", "temperature_at_alt_c",
+            "headwind_ms",
+            "crosswind_ms",
+            "turbulence_intensity",
+            "air_density_kgm3",
+            "temperature_at_alt_c",
             "ambient_light_lux_out",
         ]
 
@@ -139,9 +165,7 @@ class EnvironmentModel(SubsystemModel):
             pressure = 1013.25  # ISA sea-level standard pressure
             isa_baseline = True
         if isa_baseline:
-            warnings.append(
-                "baseline_environment_only — no mission-specific weather provided"
-            )
+            warnings.append("baseline_environment_only — no mission-specific weather provided")
 
         alt = require_param(conditions, "altitude_m", "EnvironmentModel")
         heading = require_param(conditions, "heading_deg", "EnvironmentModel")
@@ -172,9 +196,12 @@ class EnvironmentModel(SubsystemModel):
                 "ambient_light_lux_out": light,
             },
             units={
-                "headwind_ms": "m/s", "crosswind_ms": "m/s",
-                "turbulence_intensity": "m/s", "air_density_kgm3": "kg/m3",
-                "temperature_at_alt_c": "degC", "ambient_light_lux_out": "lux",
+                "headwind_ms": "m/s",
+                "crosswind_ms": "m/s",
+                "turbulence_intensity": "m/s",
+                "air_density_kgm3": "kg/m3",
+                "temperature_at_alt_c": "degC",
+                "ambient_light_lux_out": "lux",
             },
             warnings=warnings,
         )

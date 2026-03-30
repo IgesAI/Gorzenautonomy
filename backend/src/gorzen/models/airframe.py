@@ -42,9 +42,14 @@ class AirframeModel(SubsystemModel):
 
     def parameter_names(self) -> list[str]:
         return [
-            "mass_total_kg", "wing_area_m2", "wing_span_m",
-            "cd0", "cl_alpha", "oswald_efficiency",
-            "max_speed_ms", "max_load_factor",
+            "mass_total_kg",
+            "wing_area_m2",
+            "wing_span_m",
+            "cd0",
+            "cl_alpha",
+            "oswald_efficiency",
+            "max_speed_ms",
+            "max_load_factor",
         ]
 
     def state_names(self) -> list[str]:
@@ -52,9 +57,14 @@ class AirframeModel(SubsystemModel):
 
     def output_names(self) -> list[str]:
         return [
-            "drag_N", "lift_required_N", "wing_lift_N",
-            "rotor_lift_required_N", "power_parasitic_W",
-            "flight_mode_id", "load_factor", "aero_feasible",
+            "drag_N",
+            "lift_required_N",
+            "wing_lift_N",
+            "rotor_lift_required_N",
+            "power_parasitic_W",
+            "flight_mode_id",
+            "load_factor",
+            "aero_feasible",
         ]
 
     def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:
@@ -78,7 +88,7 @@ class AirframeModel(SubsystemModel):
         W = mass * G
         if S <= 0:
             raise ValueError("INSUFFICIENT_DATA: wing_area_m2 must be > 0 (context: AirframeModel)")
-        AR = b ** 2 / S
+        AR = b**2 / S
 
         v_trans_start = vne * self.TRANSITION_START_FRAC
         v_trans_end = vne * self.TRANSITION_END_FRAC
@@ -93,7 +103,7 @@ class AirframeModel(SubsystemModel):
             mode_id = 2.0  # cruise
             wing_fraction = 1.0
 
-        q = 0.5 * rho * v ** 2 if v > 0.1 else 0.0
+        q = 0.5 * rho * v**2 if v > 0.1 else 0.0
 
         cl = cl_alpha * alpha_rad if v > 0.1 else 0.0
         wing_lift = q * S * cl
@@ -102,7 +112,7 @@ class AirframeModel(SubsystemModel):
 
         rotor_lift_required = W - wing_lift
 
-        cd_induced = cl ** 2 / (np.pi * AR * e) if (v > 0.1 and AR > 0) else 0.0
+        cd_induced = cl**2 / (np.pi * AR * e) if (v > 0.1 and AR > 0) else 0.0
         cd_total = cd0 + cd_induced
         drag = q * S * cd_total if v > 0.1 else 0.0
 
@@ -126,9 +136,14 @@ class AirframeModel(SubsystemModel):
                 "aero_feasible": float(feasible),
             },
             units={
-                "drag_N": "N", "lift_required_N": "N", "wing_lift_N": "N",
-                "rotor_lift_required_N": "N", "power_parasitic_W": "W",
-                "flight_mode_id": "1", "load_factor": "1", "aero_feasible": "1",
+                "drag_N": "N",
+                "lift_required_N": "N",
+                "wing_lift_N": "N",
+                "rotor_lift_required_N": "N",
+                "power_parasitic_W": "W",
+                "flight_mode_id": "1",
+                "load_factor": "1",
+                "aero_feasible": "1",
             },
             feasible=feasible,
         )

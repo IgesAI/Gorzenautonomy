@@ -6,6 +6,7 @@ from typing import Any
 
 try:
     from pyodm import Node
+
     HAS_PYODM = True
 except ImportError:
     HAS_PYODM = False

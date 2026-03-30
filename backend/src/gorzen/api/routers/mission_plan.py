@@ -23,6 +23,7 @@ router = APIRouter()
 # Validation request / response models
 # ---------------------------------------------------------------------------
 
+
 class ValidateRequest(BaseModel):
     """Request body for pre-flight mission validation."""
 
@@ -214,9 +215,9 @@ async def export_qgc() -> dict[str, Any]:
     schema_wps = [
         SchemaWaypoint(
             sequence=i,
-            wp_type=WaypointType.TAKEOFF if i == 0 else (
-                WaypointType.RETURN_TO_LAUNCH if i == len(wps) - 1 else WaypointType.PHOTO
-            ),
+            wp_type=WaypointType.TAKEOFF
+            if i == 0
+            else (WaypointType.RETURN_TO_LAUNCH if i == len(wps) - 1 else WaypointType.PHOTO),
             latitude_deg=w.latitude_deg,
             longitude_deg=w.longitude_deg,
             altitude_m=w.altitude_m,
@@ -240,9 +241,9 @@ async def export_kml() -> Any:
     schema_wps = [
         SchemaWaypoint(
             sequence=i,
-            wp_type=WaypointType.TAKEOFF if i == 0 else (
-                WaypointType.RETURN_TO_LAUNCH if i == len(wps) - 1 else WaypointType.PHOTO
-            ),
+            wp_type=WaypointType.TAKEOFF
+            if i == 0
+            else (WaypointType.RETURN_TO_LAUNCH if i == len(wps) - 1 else WaypointType.PHOTO),
             latitude_deg=w.latitude_deg,
             longitude_deg=w.longitude_deg,
             altitude_m=w.altitude_m,
@@ -266,9 +267,9 @@ async def export_px4() -> dict[str, Any]:
     schema_wps = [
         SchemaWaypoint(
             sequence=i,
-            wp_type=WaypointType.TAKEOFF if i == 0 else (
-                WaypointType.RETURN_TO_LAUNCH if i == len(wps) - 1 else WaypointType.PHOTO
-            ),
+            wp_type=WaypointType.TAKEOFF
+            if i == 0
+            else (WaypointType.RETURN_TO_LAUNCH if i == len(wps) - 1 else WaypointType.PHOTO),
             latitude_deg=w.latitude_deg,
             longitude_deg=w.longitude_deg,
             altitude_m=w.altitude_m,
@@ -300,9 +301,9 @@ async def validate_mission(req: ValidateRequest) -> ValidateResponse:
     schema_wps = [
         SchemaWaypoint(
             sequence=i,
-            wp_type=WaypointType.TAKEOFF if i == 0 else (
-                WaypointType.RETURN_TO_LAUNCH if i == len(wps) - 1 else WaypointType.NAVIGATE
-            ),
+            wp_type=WaypointType.TAKEOFF
+            if i == 0
+            else (WaypointType.RETURN_TO_LAUNCH if i == len(wps) - 1 else WaypointType.NAVIGATE),
             latitude_deg=w.latitude_deg,
             longitude_deg=w.longitude_deg,
             altitude_m=w.altitude_m,

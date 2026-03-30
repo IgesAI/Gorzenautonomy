@@ -29,6 +29,7 @@ class PosteriorDistribution:
         if self.samples is not None:
             return float(np.percentile(self.samples, p))
         from scipy.stats import norm
+
         return float(norm.ppf(p / 100, self.mean, self.std))
 
 
@@ -48,7 +49,7 @@ class GPDiscrepancy:
         if self.length_scales is None:
             self.length_scales = np.ones(self.input_dim)
         diff = (x1 - x2) / self.length_scales
-        return self.signal_variance * np.exp(-0.5 * np.sum(diff ** 2))
+        return self.signal_variance * np.exp(-0.5 * np.sum(diff**2))
 
     def _kernel_matrix(self, X1: np.ndarray, X2: np.ndarray) -> np.ndarray:
         n1, n2 = X1.shape[0], X2.shape[0]
@@ -90,7 +91,9 @@ class GPDiscrepancy:
         else:
             mean = k_star @ self._alpha
             try:
-                K = self._kernel_matrix(self.X_train, self.X_train) + self.noise_variance * np.eye(len(self.X_train))
+                K = self._kernel_matrix(self.X_train, self.X_train) + self.noise_variance * np.eye(
+                    len(self.X_train)
+                )
                 K_inv = np.linalg.inv(K)
                 var = k_ss - np.sum((k_star @ K_inv) * k_star, axis=1)
             except np.linalg.LinAlgError:
@@ -175,8 +178,9 @@ class BayesianCalibrator:
 
             return -(log_prior + log_lik)
 
-        result = minimize(neg_log_posterior, theta0, method="Nelder-Mead",
-                          options={"maxiter": 1000})
+        result = minimize(
+            neg_log_posterior, theta0, method="Nelder-Mead", options={"maxiter": 1000}
+        )
         theta_map = result.x
 
         # Approximate posterior via Laplace approximation
@@ -195,7 +199,7 @@ class BayesianCalibrator:
                     - neg_log_posterior(theta_map + e_i)
                     - neg_log_posterior(theta_map + e_j)
                     + f0
-                ) / (eps ** 2)
+                ) / (eps**2)
 
         try:
             cov = np.linalg.inv(H + np.eye(n_params) * 1e-6)
