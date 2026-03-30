@@ -1,0 +1,13 @@
+# Simulation overlay: adds PX4 SITL + Gazebo Harmonic.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.sim.yml --profile ros up
+
+services:
+  px4-sitl:
+    image: px4io/px4-dev-simulation-jammy:latest
+    network_mode: host
+    command: bash -c "cd /PX4-Autopilot && make px4_sitl gz_x500"
+    environment:
+      PX4_GZ_MODEL: x500
+      PX4_SIM_SPEED_FACTOR: "1"
+    profiles:
+      - sim

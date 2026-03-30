@@ -209,6 +209,7 @@ def create_app() -> FastAPI:
         execution,
         mission,
         mission_plan,
+        predictions,
         telemetry,
         telemetry_logs,
         twin,
@@ -225,9 +226,12 @@ def create_app() -> FastAPI:
     app.include_router(validation.router, prefix="/validation", tags=["validation"], dependencies=auth_dep)
     app.include_router(environment.router, prefix="/environment", tags=["environment"], dependencies=auth_dep)
     app.include_router(telemetry.ws_router, prefix="/telemetry", tags=["telemetry"])
+    app.include_router(telemetry.internal_router, prefix="/telemetry", tags=["telemetry"])
     app.include_router(telemetry.router, prefix="/telemetry", tags=["telemetry"], dependencies=auth_dep)
     app.include_router(telemetry_logs.router, prefix="/telemetry-logs", tags=["telemetry-logs"], dependencies=auth_dep)
     app.include_router(mission_plan.router, prefix="/mission-plan", tags=["mission-plan"], dependencies=auth_dep)
+    app.include_router(predictions.router, prefix="/predictions", tags=["predictions"], dependencies=auth_dep)
+    app.include_router(predictions.validations_router, prefix="/validations", tags=["validations"], dependencies=auth_dep)
     app.include_router(audit.router, prefix="/audit", tags=["audit"], dependencies=auth_dep)
 
     @app.get("/health")

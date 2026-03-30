@@ -50,6 +50,36 @@ services:
     profiles:
       - frontend
 
+  # ── ROS 2 services (Phase 1: bridge only) ──────────────────────────
+
+  xrce-dds-agent:
+    image: eprosima/micro-xrce-dds-agent:v2.4.3
+    network_mode: host
+    command: udp4 -p 8888
+    restart: unless-stopped
+    profiles:
+      - ros
+
+  gorzen-bridge:
+    build:
+      context: ./ros
+      dockerfile: Dockerfile
+      target: gorzen-bridge
+    network_mode: host
+    environment:
+      GORZEN_API_URL: http://localhost:8000
+      FORWARD_RATE_HZ: "10.0"
+      BRIDGE_SOURCE: "ros2"
+      ROS_DOMAIN_ID: "0"
+      RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+    restart: unless-stopped
+    depends_on:
+      - api
+      - xrce-dds-agent
+    profiles:
+      - ros
+
 volumes:
   gorzen_pgdata:
   gorzen_storage:
+  gorzen_bags:

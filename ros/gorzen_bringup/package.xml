@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>gorzen_bringup</name>
+  <version>0.1.0</version>
+  <description>Launch files for Gorzenautonomy ROS 2 stack</description>
+  <maintainer email="dev@gorzen.io">Gorzen Dev</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>gorzen_bridge</exec_depend>
+  <exec_depend>gorzen_msgs</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

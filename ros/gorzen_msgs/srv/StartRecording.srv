@@ -1,0 +1,6 @@
+# Begin rosbag2 recording tagged with mission metadata.
+string mission_id
+string prediction_id
+---
+bool success
+string bag_path

@@ -111,3 +111,34 @@ class TelemetryLogDB(Base):
     topics: Mapped[list] = mapped_column(JSON, default=list)
     log_metadata: Mapped[dict] = mapped_column("log_metadata", JSON, default=dict)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PredictionSetDB(Base):
+    """Pre-flight predicted outcomes for a mission, stored before execution
+    so post-flight validation can compute deltas."""
+
+    __tablename__ = "prediction_sets"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    mission_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    twin_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    predictions: Mapped[dict] = mapped_column(JSON, nullable=False)
+    envelope_hash: Mapped[str] = mapped_column(String(64), default="")
+    model_version: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ValidationRunDB(Base):
+    """Post-flight comparison of predicted vs actual outcomes."""
+
+    __tablename__ = "validation_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    prediction_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    mission_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    bag_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    actuals: Mapped[dict] = mapped_column(JSON, nullable=False)
+    deltas: Mapped[dict] = mapped_column(JSON, nullable=False)
+    confidence_update: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="simulation")
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

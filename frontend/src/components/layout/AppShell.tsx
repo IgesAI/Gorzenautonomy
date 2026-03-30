@@ -194,7 +194,16 @@ export function AppShell({
         <GlassPanel className="flex-1 min-h-0 overflow-hidden" padding="p-0">
           {secondaryView === null && (
             <div className="h-full relative overflow-hidden bg-black">
-              {/* Drone animation — always visible as background */}
+              {/* Faint grey wireframe — always visible */}
+              <img
+                src="/drone-hero.png"
+                alt=""
+                className="absolute inset-0 w-full h-full object-contain select-none pointer-events-none"
+                style={{ opacity: 0.15 }}
+                loading="lazy"
+                draggable={false}
+              />
+              {/* Purple sweep animation over the drone */}
               <img
                 src="/drone-hero.png"
                 alt=""

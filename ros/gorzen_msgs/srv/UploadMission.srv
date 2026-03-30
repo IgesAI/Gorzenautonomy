@@ -1,0 +1,5 @@
+# Trigger MAVSDK mission upload for a planned mission.
+string mission_id
+---
+bool success
+string message

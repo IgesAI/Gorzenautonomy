@@ -1,0 +1,17 @@
+bridge_node:
+  ros__parameters:
+    # Gorzen planner REST base URL
+    planner_url: "http://localhost:8000"
+
+    # How often to POST aggregated telemetry to the planner (Hz).
+    # The bridge subscribes to PX4 topics at their native rate but
+    # batches into frames at this cadence to avoid flooding the REST API.
+    forward_rate_hz: 10.0
+
+    # Telemetry source: "ros2" uses PX4 uXRCE-DDS topics,
+    # "sim" publishes synthetic frames for integration testing.
+    source: "ros2"
+
+    # Vehicle namespace prefix for multi-vehicle (empty = single vehicle).
+    # E.g. "drone_01" subscribes to /drone_01/fmu/out/*
+    vehicle_ns: ""

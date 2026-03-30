@@ -80,12 +80,14 @@ export function DroneDiagram({ selected, onSelect, schema }: DroneDiagramProps) 
     <div className="relative w-full h-full min-h-[480px] flex items-center justify-center">
       {/* Drone image - bird's eye, nose top, tail bottom */}
       <div className="absolute inset-0">
-        {/* Base drone: white wireframe tinted to dark blue via brightness + sepia + hue-rotate */}
+        {/* Faint grey outline — always visible so the drone shape is readable.
+            mix-blend-mode: screen makes the black background invisible,
+            showing only the white wireframe lines. */}
         <img
           src="/drone-hero.png"
           alt="VTOL drone bird's eye view"
           className="absolute inset-0 w-full h-full object-contain select-none pointer-events-none"
-          style={{ filter: 'brightness(0.55) sepia(1) hue-rotate(190deg) saturate(3)' }}
+          style={{ mixBlendMode: 'screen', opacity: 0.15 }}
           loading="lazy"
           draggable={false}
         />

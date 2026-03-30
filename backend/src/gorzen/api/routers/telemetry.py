@@ -1,8 +1,9 @@
-"""Telemetry & flight data endpoints: MAVLink, PX4 params, flight logs."""
+"""Telemetry & flight data endpoints: MAVLink, PX4 params, flight logs, ROS 2 bridge ingestion."""
 
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
@@ -20,7 +21,7 @@ from gorzen.services.flight_log import (
     get_available_topics,
     parse_ulog,
 )
-from gorzen.services.mavlink_telemetry import telemetry_service
+from gorzen.services.mavlink_telemetry import TelemetryFrame, telemetry_service
 from gorzen.services.px4_params import (
     get_param_map,
     get_px4_groups,
@@ -40,6 +41,8 @@ async def read_upload_with_limit(file: UploadFile, max_bytes: int = MAX_UPLOAD_B
 router = APIRouter()
 # WebSocket is registered separately without global HTTP auth (use ?token= when JWT is enabled).
 ws_router = APIRouter()
+# Internal router for service-to-service calls (ROS 2 bridge → planner), no JWT required.
+internal_router = APIRouter()
 
 
 # --- Connection ---
@@ -85,6 +88,70 @@ async def get_connection_status() -> dict[str, Any]:
 async def get_telemetry_snapshot() -> dict[str, Any]:
     """Get the latest telemetry frame as a single snapshot."""
     return telemetry_service.get_snapshot()
+
+
+class BridgeIngestPayload(BaseModel):
+    """Telemetry frame POSTed by the gorzen-bridge ROS 2 node."""
+
+    source: str = "ros2_bridge"
+    timestamp: float = 0.0
+    position: dict[str, float] = {}
+    attitude: dict[str, float] = {}
+    velocity: dict[str, float] = {}
+    battery: dict[str, float] = {}
+    gps: dict[str, Any] = {}
+    wind: dict[str, float] = {}
+    status: dict[str, Any] = {}
+
+
+@internal_router.post("/ingest")
+async def ingest_bridge_telemetry(payload: BridgeIngestPayload) -> dict[str, str]:
+    """Accept a telemetry frame from the ROS 2 bridge and inject it into
+    the existing telemetry service so the frontend WebSocket sees it.
+
+    This creates a second telemetry path alongside pymavlink, allowing
+    A/B comparison from the same frontend.
+    """
+    frame = telemetry_service.frame
+    pos = payload.position
+    att = payload.attitude
+    vel = payload.velocity
+    bat = payload.battery
+    gps = payload.gps
+    wind = payload.wind
+    status = payload.status
+
+    frame.timestamp = payload.timestamp or time.time()
+    frame.latitude_deg = pos.get("latitude_deg", frame.latitude_deg)
+    frame.longitude_deg = pos.get("longitude_deg", frame.longitude_deg)
+    frame.absolute_altitude_m = pos.get("absolute_altitude_m", frame.absolute_altitude_m)
+    frame.relative_altitude_m = pos.get("relative_altitude_m", frame.relative_altitude_m)
+    frame.roll_deg = att.get("roll_deg", frame.roll_deg)
+    frame.pitch_deg = att.get("pitch_deg", frame.pitch_deg)
+    frame.yaw_deg = att.get("yaw_deg", frame.yaw_deg)
+    frame.groundspeed_ms = vel.get("groundspeed_ms", frame.groundspeed_ms)
+    frame.airspeed_ms = vel.get("airspeed_ms", frame.airspeed_ms)
+    frame.climb_rate_ms = vel.get("climb_rate_ms", frame.climb_rate_ms)
+    frame.velocity_north_ms = vel.get("velocity_north_ms", frame.velocity_north_ms)
+    frame.velocity_east_ms = vel.get("velocity_east_ms", frame.velocity_east_ms)
+    frame.velocity_down_ms = vel.get("velocity_down_ms", frame.velocity_down_ms)
+    frame.battery_voltage_v = bat.get("voltage_v", frame.battery_voltage_v)
+    frame.battery_current_a = bat.get("current_a", frame.battery_current_a)
+    frame.battery_remaining_pct = bat.get("remaining_pct", frame.battery_remaining_pct)
+    frame.gps_fix_type = str(gps.get("fix_type", frame.gps_fix_type))
+    frame.gps_num_satellites = int(gps.get("num_satellites", frame.gps_num_satellites))
+    frame.wind_speed_ms = wind.get("speed_ms", frame.wind_speed_ms)
+    frame.wind_direction_deg = wind.get("direction_deg", frame.wind_direction_deg)
+    frame.flight_mode = str(status.get("flight_mode", frame.flight_mode))
+    frame.armed = bool(status.get("armed", frame.armed))
+    frame.in_air = bool(status.get("in_air", frame.in_air))
+    frame.health_ok = bool(status.get("health_ok", frame.health_ok))
+
+    if not telemetry_service.is_connected:
+        telemetry_service.connection.connected = True
+        telemetry_service.connection.address = f"ros2_bridge:{payload.source}"
+
+    return {"status": "ingested", "source": payload.source}
 
 
 @ws_router.websocket("/ws")

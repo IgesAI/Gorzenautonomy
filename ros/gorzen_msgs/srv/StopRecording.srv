@@ -1,0 +1,6 @@
+# Finalize rosbag2 recording.
+---
+bool success
+string bag_path
+float64 duration_s
+uint64 size_bytes

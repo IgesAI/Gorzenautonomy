@@ -1,0 +1,7 @@
+# Default parameters for SITL development.
+gorzen_bridge:
+  ros__parameters:
+    planner_url: "http://localhost:8000"
+    forward_rate_hz: 10.0
+    source: "ros2"
+    vehicle_ns: ""
