@@ -58,9 +58,9 @@ class FuelSystemModel(SubsystemModel):
                 "INSUFFICIENT_DATA: 'fuel_type' is required but missing"
                 " (context: FuelSystemModel)"
             )
-        fuel_type = str(params["fuel_type"])
+        str(params["fuel_type"])
         density = require_param(params, "fuel_density_kg_l", "FuelSystemModel")
-        tank_l = require_param(params, "tank_capacity_l", "FuelSystemModel")
+        require_param(params, "tank_capacity_l", "FuelSystemModel")
         tank_kg = require_param(params, "tank_capacity_kg", "FuelSystemModel")
         usable_frac = require_param(params, "usable_fuel_pct", "FuelSystemModel") / 100.0
         reserve_pct = require_param(params, "fuel_reserve_pct", "FuelSystemModel") / 100.0

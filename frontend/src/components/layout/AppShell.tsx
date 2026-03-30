@@ -203,12 +203,27 @@ export function AppShell({
                 loading="lazy"
                 draggable={false}
               />
-              {/* Purple sweep animation over the drone */}
+              {/* Bloom layer — blurred purple wireframe for soft glow */}
+              <img
+                src="/drone-hero.png"
+                alt=""
+                className="absolute inset-0 w-full h-full object-contain select-none pointer-events-none drone-sweep-glow"
+                style={{
+                  filter: 'brightness(2) sepia(1) hue-rotate(240deg) saturate(8) blur(3px)',
+                  '--sweep-opacity': '0.6',
+                } as React.CSSProperties}
+                loading="lazy"
+                draggable={false}
+              />
+              {/* Sharp sweep — crisp purple wireframe on top */}
               <img
                 src="/drone-hero.png"
                 alt=""
                 className="absolute inset-0 w-full h-full object-contain select-none pointer-events-none drone-sweep-clip"
-                style={{ filter: 'brightness(0.9) sepia(1) hue-rotate(240deg) saturate(5)' }}
+                style={{
+                  filter: 'brightness(1.3) sepia(1) hue-rotate(240deg) saturate(6)',
+                  '--sweep-opacity': '0.7',
+                } as React.CSSProperties}
                 loading="lazy"
                 draggable={false}
               />

@@ -37,7 +37,7 @@ def _coerce_value(val: Any, default_type: type = float) -> Any:
     if isinstance(val, bool):
         return val
     if isinstance(val, (int, float)) and not isinstance(val, bool):
-        return float(val) if default_type == float else val
+        return float(val) if default_type is float else val
     if isinstance(val, str):
         try:
             return float(val)

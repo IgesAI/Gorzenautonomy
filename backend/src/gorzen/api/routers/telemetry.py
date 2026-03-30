@@ -21,7 +21,7 @@ from gorzen.services.flight_log import (
     get_available_topics,
     parse_ulog,
 )
-from gorzen.services.mavlink_telemetry import TelemetryFrame, telemetry_service
+from gorzen.services.mavlink_telemetry import telemetry_service
 from gorzen.services.px4_params import (
     get_param_map,
     get_px4_groups,

@@ -20,7 +20,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, Sequence
 
-from gorzen.schemas.mission import MissionPlan, Waypoint
+from gorzen.schemas.mission import MissionPlan
 from gorzen.validation.parameter_validator import (
     Violation,
     ViolationType,

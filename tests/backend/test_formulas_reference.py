@@ -45,6 +45,7 @@ class TestRotorMomentumTheory:
         rho = 1.225
         D = 0.6
         ct0 = 0.1
+        cp0 = 0.04
         n_rotors = 4
         n_rps = 50.0  # 3000 rpm
 
@@ -52,7 +53,7 @@ class TestRotorMomentumTheory:
         T_expected = ct0 * rho * n_rps**2 * D**4 * n_rotors
 
         out = m.evaluate(
-            {"rotor_count": n_rotors, "rotor_diameter_m": D, "prop_ct_static": ct0},
+            {"rotor_count": n_rotors, "rotor_diameter_m": D, "prop_ct_static": ct0, "prop_cp_static": cp0},
             {
                 "altitude_m": 0.0,
                 "rotor_lift_required_N": T_expected,
@@ -83,7 +84,11 @@ class TestDragModel:
 
         m = AirframeModel()
         out = m.evaluate(
-            {"wing_area_m2": S, "cd0": cd0, "wing_span_m": 2.0, "oswald_efficiency": 0.8},
+            {
+                "wing_area_m2": S, "cd0": cd0, "wing_span_m": 2.0,
+                "oswald_efficiency": 0.8, "mass_total_kg": 68.0,
+                "cl_alpha": 5.7, "max_speed_ms": 60.0, "max_load_factor": 3.8,
+            },
             {"airspeed_ms": v, "altitude_m": 0.0, "alpha_rad": 0.0, "air_density_kgm3": rho},
         )
         D_actual = out.values["drag_N"]
@@ -99,8 +104,10 @@ class TestGSDFormula:
     def test_gsd_formula(self):
         """Reference: GSD [m/px] = (sensor_width_mm * alt_m) / (focal_length_mm * pixel_width)."""
         sw_mm = 13.2
+        sh_mm = 8.8
         fl_mm = 24.0
         px_w = 4000
+        px_h = 3000
         alt_m = 100.0
 
         gsd_expected_m = (sw_mm * alt_m) / (fl_mm * px_w)
@@ -108,7 +115,7 @@ class TestGSDFormula:
 
         m = GSDModel()
         out = m.evaluate(
-            {"sensor_width_mm": sw_mm, "focal_length_mm": fl_mm, "pixel_width": px_w},
+            {"sensor_width_mm": sw_mm, "sensor_height_mm": sh_mm, "focal_length_mm": fl_mm, "pixel_width": px_w, "pixel_height": px_h},
             {"altitude_m": alt_m},
         )
         assert abs(out.values["gsd_w_cm_px"] - gsd_expected_cm) < 0.01
@@ -116,14 +123,9 @@ class TestGSDFormula:
     def test_gsd_scales_linearly_with_altitude(self):
         """GSD ∝ altitude."""
         m = GSDModel()
-        out1 = m.evaluate(
-            {"sensor_width_mm": 13.2, "focal_length_mm": 24.0, "pixel_width": 4000},
-            {"altitude_m": 50.0},
-        )
-        out2 = m.evaluate(
-            {"sensor_width_mm": 13.2, "focal_length_mm": 24.0, "pixel_width": 4000},
-            {"altitude_m": 100.0},
-        )
+        params = {"sensor_width_mm": 13.2, "sensor_height_mm": 8.8, "focal_length_mm": 24.0, "pixel_width": 4000, "pixel_height": 3000}
+        out1 = m.evaluate(params, {"altitude_m": 50.0})
+        out2 = m.evaluate(params, {"altitude_m": 100.0})
         ratio = out2.values["gsd_cm_px"] / (out1.values["gsd_cm_px"] + 1e-9)
         assert 1.95 < ratio < 2.05
 

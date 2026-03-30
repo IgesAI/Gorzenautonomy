@@ -9,7 +9,7 @@ import json
 import xml.etree.ElementTree as ET
 from typing import Any
 
-from gorzen.schemas.mission import MissionPlan, Waypoint, WaypointType
+from gorzen.schemas.mission import MissionPlan, WaypointType
 
 
 def export_qgc_plan(plan: MissionPlan) -> dict[str, Any]:

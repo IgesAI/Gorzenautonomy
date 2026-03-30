@@ -45,7 +45,7 @@ class IdentificationConfidenceModel(SubsystemModel):
         deg_per_blur = require_param(params, "accuracy_degradation_per_blur_px", "IdentificationConfidenceModel")
         deg_per_q10 = require_param(params, "accuracy_degradation_per_jpeg_q10", "IdentificationConfidenceModel")
         ood_thresh = require_param(params, "ood_threshold", "IdentificationConfidenceModel")
-        input_res = require_param(params, "input_resolution_px", "IdentificationConfidenceModel")
+        require_param(params, "input_resolution_px", "IdentificationConfidenceModel")
 
         blur_px = require_param(conditions, "smear_pixels", "IdentificationConfidenceModel")
         rs_distortion = require_param(conditions, "rs_total_distortion_px", "IdentificationConfidenceModel")

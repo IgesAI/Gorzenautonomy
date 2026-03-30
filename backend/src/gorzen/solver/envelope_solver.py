@@ -34,13 +34,7 @@ from gorzen.models.propulsion import ESCLossModel, ICEEngineModel, MotorElectric
 from gorzen.schemas.envelope import EnvelopeResponse, EnvelopeSurface
 from gorzen.schemas.parameter import DistributionType, EnvelopeOutput, SensitivityEntry, UncertaintySpec
 from gorzen.schemas.twin_graph import VehicleTwin
-from gorzen.schemas.validation_result import (
-    ConfidenceClass,
-    MissionStatus,
-    ValidationReport,
-)
 from gorzen.uq.monte_carlo import MCInput, MonteCarloEngine
-from gorzen.validation.parameter_validator import validate_sensor_params
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +166,7 @@ def _extract_params(twin: VehicleTwin) -> dict[str, float]:
     p["antenna_gain_dbi"] = cm.antenna_gain_dbi.value
     p["receiver_sensitivity_dbm"] = cm.receiver_sensitivity_dbm.value
     p["manet_bandwidth_mbps"] = cm.manet_bandwidth_mbps.value
+    p["satcom_bandwidth_mbps"] = cm.satcom_bandwidth_mbps.value
 
     mc = twin.mission_profile.constraints
     p["target_feature_mm"] = mc.target_feature_mm.value
@@ -280,6 +275,9 @@ def evaluate_point(
         "mission_elapsed_hr": 0.0,
         "density_altitude_ft": params.get("density_altitude_ft", altitude_m * 3.281),
         "temperature_c": params.get("temperature_c", 20.0),
+        "compute_power_W": params.get("max_power_w", 15.0),
+        "avionics_power_W": 8.0,
+        "manet_frequency_mhz": 1350.0,
     }
     merged = dict(params)
     merged.update(conditions)

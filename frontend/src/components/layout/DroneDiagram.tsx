@@ -91,12 +91,28 @@ export function DroneDiagram({ selected, onSelect, schema }: DroneDiagramProps) 
           loading="lazy"
           draggable={false}
         />
-        {/* Purple-tinted copy of drone, revealed by animated clip-path sweep */}
+        {/* Bloom layer — blurred purple wireframe for soft glow */}
+        <img
+          src="/drone-hero.png"
+          alt=""
+          className="absolute inset-0 w-full h-full object-contain select-none pointer-events-none drone-sweep-glow"
+          style={{
+            filter: 'brightness(2) sepia(1) hue-rotate(250deg) saturate(8) blur(3px)',
+            '--sweep-opacity': '0.6',
+          } as React.CSSProperties}
+          loading="lazy"
+          draggable={false}
+          aria-hidden
+        />
+        {/* Sharp sweep — crisp purple wireframe on top */}
         <img
           src="/drone-hero.png"
           alt=""
           className="absolute inset-0 w-full h-full object-contain select-none pointer-events-none drone-sweep-clip"
-          style={{ filter: 'brightness(0.7) sepia(1) hue-rotate(250deg) saturate(5)' }}
+          style={{
+            filter: 'brightness(1.3) sepia(1) hue-rotate(250deg) saturate(6)',
+            '--sweep-opacity': '0.7',
+          } as React.CSSProperties}
           loading="lazy"
           draggable={false}
           aria-hidden

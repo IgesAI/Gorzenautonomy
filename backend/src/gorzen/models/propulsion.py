@@ -61,7 +61,7 @@ class ICEEngineModel(SubsystemModel):
         has_hybrid = bool(require_param(params, "hybrid_boost_available", "ICEEngineModel"))
         hybrid_kw = require_param(params, "hybrid_boost_power_kw", "ICEEngineModel")
 
-        alt_m = require_param(conditions, "altitude_m", "ICEEngineModel")
+        require_param(conditions, "altitude_m", "ICEEngineModel")
         temp_c = require_param(conditions, "temperature_c", "ICEEngineModel")
         power_demand_kw = require_param(conditions, "cruise_power_demand_kw", "ICEEngineModel")
         density_alt_ft = require_param(conditions, "density_altitude_ft", "ICEEngineModel")

@@ -13,8 +13,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
-import os
-import signal
 import subprocess
 import sys
 import threading

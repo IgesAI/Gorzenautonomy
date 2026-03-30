@@ -187,33 +187,51 @@
     background: rgba(255, 255, 255, 0.06);
   }
 
-  /* Purple sweep across drone hero — soft gradient mask */
+  /*
+   * Purple sweep across drone hero — two layers, same mask animation:
+   *   .drone-sweep-glow  → blurred + bright = soft bloom halo (behind)
+   *   .drone-sweep-clip  → sharp + saturated = crisp wireframe (on top)
+   *
+   * Both use the same mask and keyframes so they move in lockstep.
+   * blur(2px) on the glow layer only softens the wireframe edges —
+   * it doesn't create visible bars because the expansion is tiny
+   * relative to the mask's fade zone.
+   */
+  .drone-sweep-glow,
   .drone-sweep-clip {
-    -webkit-mask-image: linear-gradient(90deg, transparent 0%, black 35%, black 65%, transparent 100%);
-    mask-image: linear-gradient(90deg, transparent 0%, black 35%, black 65%, transparent 100%);
-    -webkit-mask-size: 40% 100%;
-    mask-size: 40% 100%;
+    -webkit-mask-image: linear-gradient(90deg, transparent 0%, black 30%, black 70%, transparent 100%);
+    mask-image: linear-gradient(90deg, transparent 0%, black 30%, black 70%, transparent 100%);
+    -webkit-mask-size: 45% 100%;
+    mask-size: 45% 100%;
     -webkit-mask-repeat: no-repeat;
     mask-repeat: no-repeat;
-    opacity: 0.55;
+    will-change: mask-position, opacity;
     animation: drone-mask-sweep 8s linear infinite;
+  }
+
+  .drone-sweep-glow {
+    opacity: 0.6;
+  }
+
+  .drone-sweep-clip {
+    opacity: 0.7;
   }
 
   @keyframes drone-mask-sweep {
     0% {
-      -webkit-mask-position: -50% 0;
-      mask-position: -50% 0;
+      -webkit-mask-position: -60% 0;
+      mask-position: -60% 0;
       opacity: 0;
     }
-    8% {
-      opacity: 0.55;
+    10% {
+      opacity: var(--sweep-opacity, 0.7);
     }
-    92% {
-      opacity: 0.55;
+    90% {
+      opacity: var(--sweep-opacity, 0.7);
     }
     100% {
-      -webkit-mask-position: 150% 0;
-      mask-position: 150% 0;
+      -webkit-mask-position: 160% 0;
+      mask-position: 160% 0;
       opacity: 0;
     }
   }

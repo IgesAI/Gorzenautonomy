@@ -160,13 +160,13 @@ def generate_polygon_clipped_lawnmower(
     lats = [p[0] for p in aoi]
     lons = [p[1] for p in aoi]
     min_lat, max_lat = min(lats), max(lats)
-    min_lon, max_lon = min(lons), max(lons)
+    _min_lon, _max_lon = min(lons), max(lons)
 
     m_per_deg_lat = 111320.0
     center_lat = (min_lat + max_lat) / 2.0
     m_per_deg_lon = 111320.0 * math.cos(math.radians(center_lat))
 
-    line_spacing_deg = line_spacing / m_per_deg_lon if m_per_deg_lon > 0 else 1e-5
+    line_spacing / m_per_deg_lon if m_per_deg_lon > 0 else 1e-5
     along_spacing_deg = along_spacing / m_per_deg_lat
 
     polygon = list(aoi)

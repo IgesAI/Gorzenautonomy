@@ -10,6 +10,14 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from gorzen.calibration.battery_life import BatteryLifeModel, fit_battery_model
+from gorzen.calibration.calibration_missions import (
+    ALL_CALIBRATION_MISSIONS,
+    CalibrationMissionType,
+)
+from gorzen.db import calibration_repo
+from gorzen.db.session import get_session
+
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB
 
 
@@ -18,14 +26,6 @@ async def read_upload_with_limit(file: UploadFile, max_bytes: int = MAX_UPLOAD_B
     if len(data) > max_bytes:
         raise HTTPException(413, f"File too large (max {max_bytes // (1024 * 1024)} MB)")
     return data
-
-from gorzen.calibration.battery_life import BatteryLifeModel, fit_battery_model
-from gorzen.calibration.calibration_missions import (
-    ALL_CALIBRATION_MISSIONS,
-    CalibrationMissionType,
-)
-from gorzen.db import calibration_repo
-from gorzen.db.session import get_session
 
 router = APIRouter()
 
