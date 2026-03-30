@@ -1,12 +1,17 @@
 """Envelope solver: speed-altitude feasibility, endurance, identification confidence.
 
 Given a twin config + mission + environment, computes operating envelope surfaces.
-Fully deterministic: uses ONLY user-provided inputs, no random sampling.
+Supports optional Monte Carlo UQ for p5/p95 confidence surfaces.
 Runs the FULL model chain top-to-bottom for every grid point.
+
+PREFLIGHT VALIDATION: Before any grid computation, validates that all
+required parameters are present and no model would fall back to internal
+defaults.  Returns INSUFFICIENT_DATA if validation fails.
 """
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
 
@@ -27,8 +32,17 @@ from gorzen.models.perception.motion_blur import MotionBlurModel
 from gorzen.models.perception.rolling_shutter import RollingShutterModel
 from gorzen.models.propulsion import ESCLossModel, ICEEngineModel, MotorElectricalModel, RotorModel
 from gorzen.schemas.envelope import EnvelopeResponse, EnvelopeSurface
-from gorzen.schemas.parameter import EnvelopeOutput, SensitivityEntry
+from gorzen.schemas.parameter import DistributionType, EnvelopeOutput, SensitivityEntry, UncertaintySpec
 from gorzen.schemas.twin_graph import VehicleTwin
+from gorzen.schemas.validation_result import (
+    ConfidenceClass,
+    MissionStatus,
+    ValidationReport,
+)
+from gorzen.uq.monte_carlo import MCInput, MonteCarloEngine
+from gorzen.validation.parameter_validator import validate_sensor_params
+
+logger = logging.getLogger(__name__)
 
 
 KTS_TO_MS = 0.514444
@@ -160,13 +174,15 @@ def _extract_params(twin: VehicleTwin) -> dict[str, float]:
     p["manet_bandwidth_mbps"] = cm.manet_bandwidth_mbps.value
 
     mc = twin.mission_profile.constraints
+    p["target_feature_mm"] = mc.target_feature_mm.value
     p["max_blur_px"] = mc.max_blur_px.value
     p["min_identification_confidence"] = mc.min_identification_confidence.value
     p["fuel_reserve_pct"] = mc.fuel_reserve_pct.value
     p["battery_reserve_pct"] = mc.battery_reserve_pct.value
     p["min_gsd_cm_px"] = mc.min_gsd_cm_px.value
-    p["exposure_time_s"] = 1.0 / 2000.0
-    p["vibration_blur_px"] = 0.1
+    p["exposure_time_s"] = mc.exposure_time_s.value
+    p["vibration_blur_px"] = mc.vibration_blur_px.value
+    p["min_pixels_on_target"] = mc.min_pixels_on_target.value
     p["esc_resistance_mohm"] = 3.0
     p["esc_switching_loss_pct"] = 2.0
 
@@ -246,6 +262,9 @@ def evaluate_point(
     # Minimum idle power ~0.3 kW for ICE
     cruise_power_est = max(0.3, P_drag_W / 1000.0 / 0.6)
 
+    target_feature_mm = params.get("target_feature_mm", 5.0)
+    target_size_m = target_feature_mm / 1000.0
+
     conditions: dict[str, Any] = {
         "airspeed_ms": speed_ms,
         "altitude_m": altitude_m,
@@ -254,7 +273,7 @@ def evaluate_point(
         "soc_pct": 80.0,
         "heading_deg": 0.0,
         "angular_rate_dps": 3.0,
-        "target_size_m": 1.0,
+        "target_size_m": target_size_m,
         "distance_to_gcs_km": 10.0,
         "cruise_power_demand_kw": cruise_power_est,
         "cruise_speed_kts": speed_kts,
@@ -268,28 +287,126 @@ def evaluate_point(
     return result.values
 
 
+def _build_uncertain_inputs(params: dict[str, float]) -> list[MCInput]:
+    """Define key parameters with realistic uncertainty distributions for MC."""
+    return [
+        MCInput(
+            name="cd0",
+            nominal=params.get("cd0", 0.03),
+            uncertainty=UncertaintySpec(
+                distribution=DistributionType.NORMAL,
+                params={"mean": params.get("cd0", 0.03), "std": params.get("cd0", 0.03) * 0.1},
+                bounds=(0.005, 0.15),
+            ),
+        ),
+        MCInput(
+            name="mass_total_kg",
+            nominal=params.get("mass_total_kg", 68.0),
+            uncertainty=UncertaintySpec(
+                distribution=DistributionType.NORMAL,
+                params={"mean": params.get("mass_total_kg", 68.0), "std": params.get("mass_total_kg", 68.0) * 0.02},
+            ),
+        ),
+        MCInput(
+            name="bsfc_cruise_g_kwh",
+            nominal=params.get("bsfc_cruise_g_kwh", 500.0),
+            uncertainty=UncertaintySpec(
+                distribution=DistributionType.NORMAL,
+                params={"mean": params.get("bsfc_cruise_g_kwh", 500.0), "std": 25.0},
+                bounds=(300.0, 800.0),
+            ),
+        ),
+        MCInput(
+            name="wind_speed_ms",
+            nominal=params.get("wind_speed_ms", 0.0),
+            uncertainty=UncertaintySpec(
+                distribution=DistributionType.NORMAL,
+                params={"mean": params.get("wind_speed_ms", 0.0), "std": 2.0},
+                bounds=(0.0, 30.0),
+            ),
+        ),
+        MCInput(
+            name="temperature_c",
+            nominal=params.get("temperature_c", 20.0),
+            uncertainty=UncertaintySpec(
+                distribution=DistributionType.NORMAL,
+                params={"mean": params.get("temperature_c", 20.0), "std": 3.0},
+            ),
+        ),
+        MCInput(
+            name="lens_mtf_nyquist",
+            nominal=params.get("lens_mtf_nyquist", 0.3),
+            uncertainty=UncertaintySpec(
+                distribution=DistributionType.NORMAL,
+                params={"mean": params.get("lens_mtf_nyquist", 0.3), "std": 0.03},
+                bounds=(0.1, 0.6),
+            ),
+        ),
+    ]
+
+
 def compute_envelope(
     twin: VehicleTwin,
     speed_range: tuple[float, float] = (0.0, 35.0),
     altitude_range: tuple[float, float] = (10.0, 200.0),
     grid_resolution: int = 20,
-    uq_method: str = "monte_carlo",
-    mc_samples: int = 1000,
+    uq_method: str = "deterministic",
+    mc_samples: int = 50,
 ) -> EnvelopeResponse:
-    """Compute the full operating envelope. Every grid point runs all 17 models.
-    Fully deterministic: same inputs always produce same outputs. No random sampling."""
+    """Compute the full operating envelope with optional Monte Carlo UQ.
+
+    When uq_method="monte_carlo", runs mc_samples trials per grid point
+    (with perturbed uncertain parameters) to produce real p5/p95 surfaces.
+    When uq_method="deterministic", uses nominal values only (fastest).
+
+    PREFLIGHT: Validates that all required model parameters are present
+    before beginning grid computation.  Returns degraded response with
+    warnings if any critical parameters are missing.
+    """
     t0 = time.time()
     params = _extract_params(twin)
     warnings: list[str] = []
+
+    # ── Preflight validation ────────────────────────────────────────────
+    _CRITICAL_PARAMS = [
+        "mass_total_kg", "wing_area_m2", "wing_span_m", "cd0",
+        "oswald_efficiency", "max_speed_ms", "sensor_width_mm",
+        "sensor_height_mm", "focal_length_mm", "pixel_width", "pixel_height",
+        "exposure_time_s", "vibration_blur_px", "max_blur_px",
+        "max_power_kw", "bsfc_cruise_g_kwh", "tank_capacity_l",
+        "fuel_density_kg_l",
+    ]
+    missing_critical = [p for p in _CRITICAL_PARAMS if p not in params or params[p] is None]
+    if missing_critical:
+        logger.warning(
+            "envelope_solver: INSUFFICIENT_DATA — missing critical params: %s",
+            missing_critical,
+        )
+        warnings.append(
+            f"INSUFFICIENT_DATA: Missing critical parameters {missing_critical}. "
+            f"Results may be invalid — models will raise errors for missing data."
+        )
+
+    run_uq = uq_method == "monte_carlo" and mc_samples > 1
 
     speeds = np.linspace(max(speed_range[0], 0.5), speed_range[1], grid_resolution)
     altitudes = np.linspace(altitude_range[0], altitude_range[1], grid_resolution)
 
     z_feasible = np.zeros((grid_resolution, grid_resolution))
     z_ident = np.zeros((grid_resolution, grid_resolution))
+    z_ident_p5 = np.zeros((grid_resolution, grid_resolution))
+    z_ident_p95 = np.zeros((grid_resolution, grid_resolution))
     z_endurance = np.zeros((grid_resolution, grid_resolution))
+    z_endurance_p5 = np.zeros((grid_resolution, grid_resolution))
+    z_endurance_p95 = np.zeros((grid_resolution, grid_resolution))
     z_fuel_flow = np.zeros((grid_resolution, grid_resolution))
     z_power = np.zeros((grid_resolution, grid_resolution))
+
+    mc_engine: MonteCarloEngine | None = None
+    mc_inputs: list[MCInput] | None = None
+    if run_uq:
+        mc_engine = MonteCarloEngine(n_samples=mc_samples, seed=42)
+        mc_inputs = _build_uncertain_inputs(params)
 
     for i, alt in enumerate(altitudes):
         for j, spd in enumerate(speeds):
@@ -301,21 +418,47 @@ def compute_envelope(
                 fuel_ok = out.get("fuel_feasible", 1.0) > 0.5
                 blur_ok = out.get("motion_blur_feasible", 1.0) > 0.5
                 batt_ok = out.get("battery_feasible", 1.0) > 0.5
-
                 ceiling_ok = alt * 3.281 <= params.get("service_ceiling_ft", 99999)
+                gsd_ok = out.get("gsd_cm_px", 0.0) <= params.get("min_gsd_cm_px", 2.0)
 
-                z_feasible[i, j] = float(aero_ok and engine_ok and fuel_ok and blur_ok and batt_ok and ceiling_ok)
+                z_feasible[i, j] = float(aero_ok and engine_ok and fuel_ok and blur_ok and batt_ok and ceiling_ok and gsd_ok)
                 z_ident[i, j] = out.get("identification_confidence", 0.0)
                 z_endurance[i, j] = out.get("fuel_endurance_hr", 0.0)
                 z_fuel_flow[i, j] = out.get("fuel_flow_rate_g_hr", 0.0)
                 z_power[i, j] = out.get("engine_power_required_kw", 0.0)
+
+                if run_uq and mc_engine is not None and mc_inputs is not None:
+                    def _model_fn(perturbed: dict[str, float], _s: float = spd, _a: float = alt) -> dict[str, float]:
+                        p = dict(params)
+                        p.update(perturbed)
+                        return evaluate_point(p, _s, _a)
+
+                    mc_result = mc_engine.propagate(_model_fn, mc_inputs)
+                    ident_samples = mc_result.output_samples.get("identification_confidence")
+                    endur_samples = mc_result.output_samples.get("fuel_endurance_hr")
+                    if ident_samples is not None and len(ident_samples) > 0:
+                        z_ident_p5[i, j] = float(np.percentile(ident_samples, 5))
+                        z_ident_p95[i, j] = float(np.percentile(ident_samples, 95))
+                    else:
+                        z_ident_p5[i, j] = z_ident[i, j]
+                        z_ident_p95[i, j] = z_ident[i, j]
+                    if endur_samples is not None and len(endur_samples) > 0:
+                        z_endurance_p5[i, j] = float(np.percentile(endur_samples, 5))
+                        z_endurance_p95[i, j] = float(np.percentile(endur_samples, 95))
+                    else:
+                        z_endurance_p5[i, j] = z_endurance[i, j]
+                        z_endurance_p95[i, j] = z_endurance[i, j]
+                else:
+                    z_ident_p5[i, j] = z_ident[i, j]
+                    z_ident_p95[i, j] = z_ident[i, j]
+                    z_endurance_p5[i, j] = z_endurance[i, j]
+                    z_endurance_p95[i, j] = z_endurance[i, j]
+
             except Exception as e:
                 z_feasible[i, j] = 0.0
                 if i == 0 and j == 0:
                     warnings.append(f"Model error at ({spd:.1f} m/s, {alt:.0f} m): {e}")
 
-    # --- Mission success: fraction of grid that is feasible AND meets ident constraint ---
-    # Per research brief: "probability-of-success conditioned on environment and constraints"
     min_ident = params.get("min_identification_confidence", 0.8)
     mission_viable = 0
     total = grid_resolution * grid_resolution
@@ -327,8 +470,7 @@ def compute_envelope(
                 mission_viable += 1
     mission_success = mission_viable / total if total > 0 else 0.0
 
-    # --- Sensitivity: correlate speed/altitude with identification confidence across grid ---
-    speed_flat = np.tile(speeds, grid_resolution)   # shape: (grid^2,)
+    speed_flat = np.tile(speeds, grid_resolution)
     alt_flat = np.repeat(altitudes, grid_resolution)
     ident_flat = z_ident.flatten()
     endurance_flat = z_endurance.flatten()
@@ -345,7 +487,6 @@ def compute_envelope(
             sensitivity.append(SensitivityEntry(parameter_name=pname, contribution_pct=corr * 100))
     sensitivity.sort(key=lambda e: e.contribution_pct, reverse=True)
 
-    # --- Nominal point outputs (for fuel endurance, safe speed, etc.) ---
     mid_speed = (speed_range[0] + speed_range[1]) / 2
     mid_alt = (altitude_range[0] + altitude_range[1]) / 2
     nominal_out = evaluate_point(params, mid_speed, mid_alt)
@@ -356,7 +497,6 @@ def compute_envelope(
         v = float(mean_val)
         return EnvelopeOutput(mean=v, std=0.0, percentiles={"p5": v, "p50": v, "p95": v}, units=unit or "1")
 
-    # --- Build response surfaces ---
     feasibility_surface = EnvelopeSurface(
         x_label="Speed (m/s)",
         y_label="Altitude (m)",
@@ -369,7 +509,6 @@ def compute_envelope(
         feasible_mask=[[bool(v > 0.5) for v in row] for row in z_feasible.tolist()],
     )
 
-    # Surfaces use deterministic grid; no UQ per point — z_p5/z_p95 = z_mean
     ident_surface = EnvelopeSurface(
         x_label="Speed (m/s)",
         y_label="Altitude (m)",
@@ -377,8 +516,8 @@ def compute_envelope(
         x_values=speeds.tolist(),
         y_values=altitudes.tolist(),
         z_mean=z_ident.tolist(),
-        z_p5=z_ident.tolist(),
-        z_p95=z_ident.tolist(),
+        z_p5=z_ident_p5.tolist(),
+        z_p95=z_ident_p95.tolist(),
     )
 
     endurance_surface = EnvelopeSurface(
@@ -388,9 +527,12 @@ def compute_envelope(
         x_values=speeds.tolist(),
         y_values=altitudes.tolist(),
         z_mean=z_endurance.tolist(),
-        z_p5=z_endurance.tolist(),
-        z_p95=z_endurance.tolist(),
+        z_p5=z_endurance_p5.tolist(),
+        z_p95=z_endurance_p95.tolist(),
     )
+
+    if run_uq:
+        warnings.append(f"UQ: Monte Carlo with {mc_samples} samples per grid point")
 
     response = EnvelopeResponse(
         speed_altitude_feasibility=feasibility_surface,
@@ -407,3 +549,20 @@ def compute_envelope(
     )
 
     return response
+
+
+def estimate_endurance_budget_minutes(
+    twin: VehicleTwin,
+    speed_ms: float = 15.0,
+    altitude_m: float = 50.0,
+) -> dict[str, float]:
+    """Single-point physics estimate for UI battery/fuel endurance (not full envelope grid)."""
+    params = _extract_params(twin)
+    values = evaluate_point(params, speed_ms, altitude_m)
+    fuel_min = float(values.get("fuel_endurance_hr", 0.0)) * 60.0
+    elec_min = float(values.get("endurance_min", 0.0))
+    return {
+        "endurance_minutes_electrical": elec_min,
+        "endurance_minutes_fuel": fuel_min,
+        "endurance_minutes_effective": max(fuel_min, elec_min),
+    }

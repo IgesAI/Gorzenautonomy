@@ -9,6 +9,7 @@ from __future__ import annotations
 import numpy as np
 
 from gorzen.models.base import ModelOutput, SubsystemModel
+from gorzen.validation.parameter_validator import require_param
 
 G = 9.81
 RHO_0 = 1.225
@@ -52,18 +53,18 @@ class ICEEngineModel(SubsystemModel):
         ]
 
     def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:
-        max_power_kw = params.get("max_power_kw", 2.2)
-        max_rpm = params.get("max_power_rpm", 8350)
-        bsfc = params.get("bsfc_cruise_g_kwh", 500.0)
-        gen_cont_w = params.get("generator_output_w", 200.0)
-        has_alt_comp = bool(params.get("altitude_compensation", 1))
-        has_hybrid = bool(params.get("hybrid_boost_available", 1))
-        hybrid_kw = params.get("hybrid_boost_power_kw", 0.5)
+        max_power_kw = require_param(params, "max_power_kw", "ICEEngineModel")
+        max_rpm = require_param(params, "max_power_rpm", "ICEEngineModel")
+        bsfc = require_param(params, "bsfc_cruise_g_kwh", "ICEEngineModel")
+        gen_cont_w = require_param(params, "generator_output_w", "ICEEngineModel")
+        has_alt_comp = bool(require_param(params, "altitude_compensation", "ICEEngineModel"))
+        has_hybrid = bool(require_param(params, "hybrid_boost_available", "ICEEngineModel"))
+        hybrid_kw = require_param(params, "hybrid_boost_power_kw", "ICEEngineModel")
 
-        alt_m = conditions.get("altitude_m", 0.0)
-        temp_c = conditions.get("temperature_c", 20.0)
-        power_demand_kw = conditions.get("cruise_power_demand_kw", 1.0)
-        density_alt_ft = conditions.get("density_altitude_ft", alt_m * 3.281)
+        alt_m = require_param(conditions, "altitude_m", "ICEEngineModel")
+        temp_c = require_param(conditions, "temperature_c", "ICEEngineModel")
+        power_demand_kw = require_param(conditions, "cruise_power_demand_kw", "ICEEngineModel")
+        density_alt_ft = require_param(conditions, "density_altitude_ft", "ICEEngineModel")
 
         # Altitude derating: ~3% power loss per 1000 ft for normally aspirated
         # With EFI altitude compensation, reduce loss to ~1.5% per 1000 ft
@@ -88,7 +89,7 @@ class ICEEngineModel(SubsystemModel):
         bsfc_actual = bsfc * (1.0 + 0.15 * (1.0 - throttle))
         actual_power = min(power_demand_kw, available_kw)
         fuel_flow_g_hr = bsfc_actual * actual_power
-        fuel_density_kg_l = conditions.get("fuel_density_kg_l", 0.81)
+        fuel_density_kg_l = require_param(conditions, "fuel_density_kg_l", "ICEEngineModel")
         fuel_flow_l_hr = fuel_flow_g_hr / (fuel_density_kg_l * 1000.0)
 
         # Generator output (reduced if engine is near max load)
@@ -151,14 +152,14 @@ class RotorModel(SubsystemModel):
         ]
 
     def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:
-        n_rotors = int(params.get("rotor_count", 4))
-        D = params.get("rotor_diameter_m", 0.6)
-        ct0 = params.get("prop_ct_static", 0.1)
-        cp0 = params.get("prop_cp_static", 0.04)
+        n_rotors = int(require_param(params, "rotor_count", "RotorModel"))
+        D = require_param(params, "rotor_diameter_m", "RotorModel")
+        ct0 = require_param(params, "prop_ct_static", "RotorModel")
+        cp0 = require_param(params, "prop_cp_static", "RotorModel")
 
-        alt = conditions.get("altitude_m", 50.0)
-        thrust_required_N = conditions.get("rotor_lift_required_N", 0.0)
-        v_fwd = conditions.get("airspeed_ms", 0.0)
+        alt = require_param(conditions, "altitude_m", "RotorModel")
+        thrust_required_N = require_param(conditions, "rotor_lift_required_N", "RotorModel")
+        v_fwd = require_param(conditions, "airspeed_ms", "RotorModel")
 
         # Use Environment model's air_density when available (pressure/temp-corrected)
         rho = conditions.get("air_density_kgm3")
@@ -218,13 +219,13 @@ class MotorElectricalModel(SubsystemModel):
         return ["motor_current_A", "motor_voltage_V", "motor_power_elec_W", "motor_efficiency"]
 
     def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:
-        kv = params.get("motor_kv", 400.0)
-        R_m = params.get("motor_resistance_ohm", 0.05)
-        kt = params.get("motor_kt", 0.024)
+        kv = require_param(params, "motor_kv", "MotorElectricalModel")
+        R_m = require_param(params, "motor_resistance_ohm", "MotorElectricalModel")
+        kt = require_param(params, "motor_kt", "MotorElectricalModel")
 
-        rpm = conditions.get("rotor_rpm", 5000.0)
-        torque_per_motor = conditions.get("rotor_torque_total_Nm", 0.1)
-        n_rotors = int(conditions.get("rotor_count", 4))
+        rpm = require_param(conditions, "rotor_rpm", "MotorElectricalModel")
+        torque_per_motor = require_param(conditions, "rotor_torque_total_Nm", "MotorElectricalModel")
+        n_rotors = int(require_param(conditions, "rotor_count", "MotorElectricalModel"))
 
         if n_rotors > 0 and torque_per_motor > 0:
             torque_per = torque_per_motor / n_rotors
@@ -235,7 +236,7 @@ class MotorElectricalModel(SubsystemModel):
         back_emf = rpm / (kv + 1e-9)
         V = back_emf + current_A * R_m
         P_elec = V * current_A * n_rotors
-        P_mech = conditions.get("rotor_power_total_W", P_elec * 0.85)
+        P_mech = require_param(conditions, "rotor_power_total_W", "MotorElectricalModel")
         eff = P_mech / (P_elec + 1e-6) if P_elec > 1.0 else 0.0
 
         return ModelOutput(
@@ -265,18 +266,18 @@ class ESCLossModel(SubsystemModel):
         return ["esc_loss_W", "total_electrical_power_W"]
 
     def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:
-        R_esc = params.get("esc_resistance_mohm", 3.0) / 1000.0
-        sw_pct = params.get("esc_switching_loss_pct", 2.0) / 100.0
+        R_esc = require_param(params, "esc_resistance_mohm", "ESCLossModel") / 1000.0
+        sw_pct = require_param(params, "esc_switching_loss_pct", "ESCLossModel") / 100.0
 
-        I_total = conditions.get("motor_current_A", 10.0)
-        P_motor = conditions.get("motor_power_elec_W", 200.0)
+        I_total = require_param(conditions, "motor_current_A", "ESCLossModel")
+        P_motor = require_param(conditions, "motor_power_elec_W", "ESCLossModel")
 
         conduction_loss = I_total ** 2 * R_esc
         switching_loss = P_motor * sw_pct
         esc_loss = conduction_loss + switching_loss
 
-        compute_power = conditions.get("compute_power_W", 15.0)
-        avionics_power = conditions.get("avionics_power_W", 10.0)
+        compute_power = require_param(conditions, "compute_power_W", "ESCLossModel")
+        avionics_power = require_param(conditions, "avionics_power_W", "ESCLossModel")
         total_elec = P_motor + esc_loss + compute_power + avionics_power
 
         return ModelOutput(

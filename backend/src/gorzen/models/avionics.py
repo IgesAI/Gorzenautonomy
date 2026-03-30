@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from gorzen.models.base import ModelOutput, SubsystemModel
+from gorzen.validation.parameter_validator import require_param
 
 
 class AvionicsModel(SubsystemModel):
@@ -37,13 +38,18 @@ class AvionicsModel(SubsystemModel):
         ]
 
     def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:
-        gps_type = str(params.get("gps_type", "rtk"))
-        ekf_pos = params.get("ekf_position_noise_m", 0.5)
-        ekf_vel = params.get("ekf_velocity_noise_ms", 0.1)
-        gyro_noise = params.get("imu_gyro_noise_dps", 0.005)
-        baro_noise = params.get("baro_noise_m", 1.0)
+        gps_type = str(require_param(params, "gps_type", "AvionicsModel"))
+        ekf_pos = require_param(params, "ekf_position_noise_m", "AvionicsModel")
+        ekf_vel = require_param(params, "ekf_velocity_noise_ms", "AvionicsModel")
+        gyro_noise = require_param(params, "imu_gyro_noise_dps", "AvionicsModel")
+        baro_noise = require_param(params, "baro_noise_m", "AvionicsModel")
 
-        gps_noise = self.GPS_NOISE.get(gps_type, 2.5)
+        if gps_type not in self.GPS_NOISE:
+            raise ValueError(
+                f"AvionicsModel: unknown gps_type '{gps_type}', "
+                f"must be one of {list(self.GPS_NOISE.keys())}"
+            )
+        gps_noise = self.GPS_NOISE[gps_type]
 
         # Fused position uncertainty (simplified Kalman steady-state)
         pos_unc = np.sqrt(gps_noise ** 2 + ekf_pos ** 2)
@@ -58,11 +64,11 @@ class AvionicsModel(SubsystemModel):
         alt_unc = np.sqrt(baro_noise ** 2 + (gps_noise * 1.5) ** 2) * 0.5
 
         # Geotag error: position + timing + attitude contribution
-        v = conditions.get("airspeed_ms", 10.0)
-        timing_error_s = 0.01
+        v = require_param(conditions, "airspeed_ms", "AvionicsModel")
+        timing_error_s = 0.01  # HEURISTIC: requires sensor-specific calibration
         geotag_pos = pos_unc
         geotag_timing = v * timing_error_s
-        alt = conditions.get("altitude_m", 50.0)
+        alt = require_param(conditions, "altitude_m", "AvionicsModel")
         geotag_attitude = alt * np.radians(heading_unc) * 0.1
         geotag_error = np.sqrt(geotag_pos ** 2 + geotag_timing ** 2 + geotag_attitude ** 2)
 

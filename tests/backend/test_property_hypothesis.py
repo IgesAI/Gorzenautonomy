@@ -6,19 +6,12 @@ Validates invariants across random inputs.
 from __future__ import annotations
 
 import numpy as np
-import pytest
+from hypothesis import given, strategies as st
 
 from gorzen.models.battery import lipo_ocv
 from gorzen.models.perception.gsd import GSDModel
 
-try:
-    from hypothesis import given, strategies as st
-    HAS_HYPOTHESIS = True
-except ImportError:
-    HAS_HYPOTHESIS = False
 
-
-@pytest.mark.skipif(not HAS_HYPOTHESIS, reason="hypothesis not installed")
 class TestLiPoOCVProperties:
     """Property-based tests for LiPo OCV curve."""
 
@@ -36,7 +29,6 @@ class TestLiPoOCVProperties:
         assert v2 >= v1 - 0.01  # allow small numerical error
 
 
-@pytest.mark.skipif(not HAS_HYPOTHESIS, reason="hypothesis not installed")
 class TestGSDProperties:
     """Property-based tests for GSD model."""
 

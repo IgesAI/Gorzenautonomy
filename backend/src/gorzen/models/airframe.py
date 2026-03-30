@@ -2,6 +2,10 @@
 
 Tier A (real-time): reduced-order rigid-body dynamics with calibrated force/torque models.
 Supports hover, transition, and wingborne cruise flight modes.
+
+All airframe parameters MUST come from the selected platform spec or
+validated operator input.  No internal defaults — missing data raises
+ValueError (INSUFFICIENT_DATA).
 """
 
 from __future__ import annotations
@@ -9,12 +13,13 @@ from __future__ import annotations
 import numpy as np
 
 from gorzen.models.base import ModelOutput, SubsystemModel
+from gorzen.validation.parameter_validator import require_param
 
-# ISA sea-level defaults
-RHO_0 = 1.225  # kg/m^3
-TEMP_0 = 288.15  # K
-LAPSE_RATE = 0.0065  # K/m
-G = 9.81  # m/s^2
+# ISA standards constants (physics, not platform-specific)
+RHO_0 = 1.225  # kg/m^3 — ISA sea level
+TEMP_0 = 288.15  # K — ISA sea level
+LAPSE_RATE = 0.0065  # K/m — ISA troposphere lapse rate
+G = 9.81  # m/s^2 — gravitational acceleration
 
 
 def isa_density(altitude_m: float) -> float:
@@ -53,25 +58,27 @@ class AirframeModel(SubsystemModel):
         ]
 
     def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:
-        mass = params.get("mass_total_kg", 12.0)
-        S = params.get("wing_area_m2", 0.5)
-        b = params.get("wing_span_m", 2.0)
-        cd0 = params.get("cd0", 0.03)
-        cl_alpha = params.get("cl_alpha", 5.0)
-        e = params.get("oswald_efficiency", 0.8)
-        vne = params.get("max_speed_ms", 35.0)
-        max_lf = params.get("max_load_factor", 3.0)
+        mass = require_param(params, "mass_total_kg", "AirframeModel")
+        S = require_param(params, "wing_area_m2", "AirframeModel")
+        b = require_param(params, "wing_span_m", "AirframeModel")
+        cd0 = require_param(params, "cd0", "AirframeModel")
+        cl_alpha = require_param(params, "cl_alpha", "AirframeModel")
+        e = require_param(params, "oswald_efficiency", "AirframeModel")
+        vne = require_param(params, "max_speed_ms", "AirframeModel")
+        max_lf = require_param(params, "max_load_factor", "AirframeModel")
 
-        v = conditions.get("airspeed_ms", 0.0)
-        alt = conditions.get("altitude_m", 50.0)
-        alpha_rad = conditions.get("alpha_rad", 0.05)
+        v = require_param(conditions, "airspeed_ms", "AirframeModel")
+        alt = require_param(conditions, "altitude_m", "AirframeModel")
+        alpha_rad = conditions.get("alpha_rad", 0.05)  # flight-state, computed by controller
 
         # Use Environment model's air_density when available (pressure/temp-corrected)
         rho = conditions.get("air_density_kgm3")
         if rho is None or rho <= 0:
             rho = isa_density(alt)
         W = mass * G
-        AR = b ** 2 / S if S > 0 else 10.0
+        if S <= 0:
+            raise ValueError("INSUFFICIENT_DATA: wing_area_m2 must be > 0 (context: AirframeModel)")
+        AR = b ** 2 / S
 
         v_trans_start = vne * self.TRANSITION_START_FRAC
         v_trans_end = vne * self.TRANSITION_END_FRAC
@@ -103,7 +110,7 @@ class AirframeModel(SubsystemModel):
 
         load_factor = 1.0
         if v > 0.1 and wing_lift > 0:
-            load_factor = wing_lift / W * wing_fraction + (1.0 - wing_fraction)
+            load_factor = wing_lift / W + (1.0 - wing_fraction)
 
         feasible = (v <= vne) and (load_factor <= max_lf) and (rotor_lift_required >= 0)
 

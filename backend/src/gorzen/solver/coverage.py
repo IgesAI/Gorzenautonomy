@@ -1,11 +1,10 @@
-"""Coverage planning: drone-flightplan integration and OR-Tools route optimization."""
+"""Coverage planning: built-in polygon-clipped lawnmower, optional drone-flightplan, OR-Tools TSP."""
 
 from __future__ import annotations
 
 import math
 from typing import Any
 
-import geojson
 import numpy as np
 
 try:
@@ -40,7 +39,12 @@ def geojson_to_waypoints(
     take_off: tuple[float, float] | None = None,
 ) -> list[tuple[float, float, float]]:
     """Parse drone-flightplan GeoJSON output to (lat, lon, alt) waypoints."""
-    fc = geojson.loads(geojson_str)
+    try:
+        import geojson as _geojson
+    except ImportError as e:
+        raise RuntimeError("geojson package required — pip install geojson or install gorzen[coverage]") from e
+
+    fc = _geojson.loads(geojson_str)
     waypoints: list[tuple[float, float, float]] = []
     for f in fc.get("features", []):
         geom = f.get("geometry")
@@ -86,6 +90,111 @@ def generate_coverage_waypoints_drone_flightplan(
         mode=mode,
     )
     return geojson_to_waypoints(geojson_str, altitude_m, take_off)
+
+
+def _point_in_polygon(point: tuple[float, float], polygon: list[tuple[float, float]]) -> bool:
+    """Ray-casting point-in-polygon test."""
+    x, y = point
+    n = len(polygon)
+    inside = False
+    j = n - 1
+    for i in range(n):
+        xi, yi = polygon[i]
+        xj, yj = polygon[j]
+        if ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi + 1e-15) + xi):
+            inside = not inside
+        j = i
+    return inside
+
+
+def _intersect_horizontal_line_with_polygon(
+    lat: float, polygon: list[tuple[float, float]],
+) -> list[float]:
+    """Find all lon-intersections of a horizontal line at given lat with polygon edges."""
+    intersections: list[float] = []
+    n = len(polygon)
+    for i in range(n):
+        lat1, lon1 = polygon[i]
+        lat2, lon2 = polygon[(i + 1) % n]
+        if (lat1 <= lat < lat2) or (lat2 <= lat < lat1):
+            if abs(lat2 - lat1) > 1e-15:
+                lon_intersect = lon1 + (lat - lat1) * (lon2 - lon1) / (lat2 - lat1)
+                intersections.append(lon_intersect)
+    intersections.sort()
+    return intersections
+
+
+def generate_polygon_clipped_lawnmower(
+    aoi: list[tuple[float, float]],
+    altitude_m: float,
+    gsd_params: dict[str, float],
+    forward_overlap_pct: float = 70.0,
+    side_overlap_pct: float = 65.0,
+) -> list[tuple[float, float, float]]:
+    """Generate polygon-clipped lawnmower survey waypoints.
+
+    Uses scan-line intersection with the polygon boundary to produce
+    waypoints that lie strictly inside the AOI. No external dependencies.
+    Returns list of (lat, lon, altitude_m).
+    """
+    if len(aoi) < 3:
+        return [(p[0], p[1], altitude_m) for p in aoi]
+
+    sw = gsd_params.get("sensor_width_mm", 13.2)
+    sh = gsd_params.get("sensor_height_mm", 8.8)
+    fl = gsd_params.get("focal_length_mm", 24.0)
+    px_w = gsd_params.get("pixel_width", 4000)
+    px_h = gsd_params.get("pixel_height", 3000)
+
+    gsd_w = sw * altitude_m / (fl * px_w)
+    gsd_h = sh * altitude_m / (fl * px_h)
+    footprint_w = gsd_w * px_w
+    footprint_h = gsd_h * px_h
+
+    line_spacing = footprint_w * (1.0 - side_overlap_pct / 100.0)
+    along_spacing = footprint_h * (1.0 - forward_overlap_pct / 100.0)
+
+    line_spacing = max(line_spacing, 0.5)
+    along_spacing = max(along_spacing, 0.5)
+
+    lats = [p[0] for p in aoi]
+    lons = [p[1] for p in aoi]
+    min_lat, max_lat = min(lats), max(lats)
+    min_lon, max_lon = min(lons), max(lons)
+
+    m_per_deg_lat = 111320.0
+    center_lat = (min_lat + max_lat) / 2.0
+    m_per_deg_lon = 111320.0 * math.cos(math.radians(center_lat))
+
+    line_spacing_deg = line_spacing / m_per_deg_lon if m_per_deg_lon > 0 else 1e-5
+    along_spacing_deg = along_spacing / m_per_deg_lat
+
+    polygon = list(aoi)
+    if polygon[0] != polygon[-1]:
+        polygon.append(polygon[0])
+
+    waypoints: list[tuple[float, float, float]] = []
+    lat = min_lat
+    direction = 1
+    while lat <= max_lat + along_spacing_deg:
+        lon_crossings = _intersect_horizontal_line_with_polygon(lat, polygon)
+        # Process crossing pairs: enter polygon at odd crossings, exit at even
+        for k in range(0, len(lon_crossings) - 1, 2):
+            seg_start_lon = lon_crossings[k]
+            seg_end_lon = lon_crossings[k + 1]
+
+            n_points = max(2, int(abs(seg_end_lon - seg_start_lon) * m_per_deg_lon / line_spacing) + 1)
+            if direction == 1:
+                lons_on_line = np.linspace(seg_start_lon, seg_end_lon, n_points)
+            else:
+                lons_on_line = np.linspace(seg_end_lon, seg_start_lon, n_points)
+            for lon_pt in lons_on_line:
+                waypoints.append((lat, float(lon_pt), altitude_m))
+
+        lat += along_spacing_deg
+        direction *= -1
+
+    return waypoints
 
 
 def optimize_waypoint_order_ortools(

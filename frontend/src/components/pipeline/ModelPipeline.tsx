@@ -149,7 +149,10 @@ export function ModelPipeline() {
       {/* Controls */}
       <GlassPanel padding="p-4">
         <div className="flex items-center justify-between mb-3">
-          <h2 className={chartStyles.title}>17-Model Pipeline Inspector</h2>
+          <div>
+            <h2 className={chartStyles.title}>17-Model Pipeline Inspector</h2>
+            <p className="text-[10px] text-white/35 mt-0.5">Single-point deep dive into every physics stage</p>
+          </div>
           <button onClick={evaluate} disabled={loading} className="glass-button text-xs py-1.5 px-3 disabled:opacity-50">
             {loading ? 'Evaluating...' : 'Evaluate'}
           </button>
@@ -159,6 +162,7 @@ export function ModelPipeline() {
             <label className="text-[10px] text-white/40 block mb-1">Speed (m/s)</label>
             <div className="flex items-center gap-2">
               <input type="range" min={0.5} max={35} step={0.5} value={speed}
+                aria-label="Speed"
                 onChange={e => setSpeed(+e.target.value)} className="glass-slider flex-1" />
               <span className="text-xs font-mono text-white/70 w-10 text-right">{speed}</span>
             </div>
@@ -167,6 +171,7 @@ export function ModelPipeline() {
             <label className="text-[10px] text-white/40 block mb-1">Altitude (m)</label>
             <div className="flex items-center gap-2">
               <input type="range" min={10} max={200} step={5} value={altitude}
+                aria-label="Altitude"
                 onChange={e => setAltitude(+e.target.value)} className="glass-slider flex-1" />
               <span className="text-xs font-mono text-white/70 w-10 text-right">{altitude}</span>
             </div>

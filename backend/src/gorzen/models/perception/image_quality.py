@@ -9,6 +9,7 @@ from __future__ import annotations
 import numpy as np
 
 from gorzen.models.base import ModelOutput, SubsystemModel
+from gorzen.validation.parameter_validator import require_param
 
 
 class ImageQualityModel(SubsystemModel):
@@ -20,7 +21,7 @@ class ImageQualityModel(SubsystemModel):
     Simplified for digital-twin use: combines GSD, system MTF, SNR, blur, compression.
     """
 
-    # GIQE 5 coefficients — single unified equation (no RER bifurcation)
+    # LITERATURE: GIQE-5 standard coefficients
     # Reference: Griffith, "Updated GIQE", ASPRS/JACIE 2012-2014; NGA publications
     # NIIRS = c0 + c1*ln(GSD) + c2*ln(RER) + c3*(G/SNR) + c4*H
     # Uses natural log (ln) per GIQE 5 formulation
@@ -34,6 +35,7 @@ class ImageQualityModel(SubsystemModel):
         return [
             "lens_mtf_nyquist", "pixel_size_um",
             "jpeg_quality", "encoding_bitrate_mbps",
+            "min_gsd_cm_px",
         ]
 
     def state_names(self) -> list[str]:
@@ -46,17 +48,18 @@ class ImageQualityModel(SubsystemModel):
         ]
 
     def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:
-        lens_mtf = params.get("lens_mtf_nyquist", 0.3)
-        pixel_um = params.get("pixel_size_um", 3.3)
-        jpeg_q = params.get("jpeg_quality", 90)
+        lens_mtf = require_param(params, "lens_mtf_nyquist", "ImageQualityModel")
+        pixel_um = require_param(params, "pixel_size_um", "ImageQualityModel")
+        jpeg_q = require_param(params, "jpeg_quality", "ImageQualityModel")
 
-        gsd_cm = conditions.get("gsd_cm_px", 1.0)
-        blur_px = conditions.get("smear_pixels", 0.0)
-        light_lux = conditions.get("ambient_light_lux_out", 10000.0)
-        compression_qf = conditions.get("compression_quality_factor", 90.0)
+        gsd_cm = require_param(conditions, "gsd_cm_px", "ImageQualityModel")
+        blur_px = require_param(conditions, "smear_pixels", "ImageQualityModel")
+        light_lux = require_param(conditions, "ambient_light_lux_out", "ImageQualityModel")
+        compression_qf = require_param(conditions, "compression_quality_factor", "ImageQualityModel")
 
         # System MTF: lens * sampling * motion blur degradation
-        sampling_mtf = 0.64  # sinc(0.5) for square pixels
+        # LITERATURE: sinc(0.5) for square pixel aperture
+        sampling_mtf = 0.64
         blur_mtf = np.sinc(blur_px * 0.5) if blur_px > 0 else 1.0
         blur_mtf = max(blur_mtf, 0.05)
         system_mtf = lens_mtf * sampling_mtf * blur_mtf
@@ -65,13 +68,12 @@ class ImageQualityModel(SubsystemModel):
         rer = 0.5 + 0.5 * system_mtf
 
         # SNR model (simplified: photon noise + read noise)
-        # Higher light = higher SNR
-        signal = pixel_um ** 2 * light_lux * 0.001  # relative signal
+        signal = pixel_um ** 2 * light_lux * 0.001
         read_noise = 3.0  # electrons equivalent
         snr = signal / (np.sqrt(signal + read_noise ** 2) + 1e-6)
         snr_db = 20 * np.log10(snr + 1e-6)
 
-        # Compression quality: blend between JPEG quality and bandwidth-limited quality
+        # HEURISTIC: requires sensor-specific calibration
         comp_q = min(jpeg_q, compression_qf) / 100.0
         compression_mtf = 0.7 + 0.3 * comp_q
 
@@ -88,8 +90,16 @@ class ImageQualityModel(SubsystemModel):
         )
         niirs = np.clip(niirs, 0.0, 9.0)
 
-        # Image utility score normalized 0-1
-        utility = niirs / 9.0
+        # Task-relative GSD utility: smooth sigmoid degradation as GSD approaches
+        # the mission's required resolution. Captures altitude-driven quality loss.
+        min_gsd = require_param(params, "min_gsd_cm_px", "ImageQualityModel")
+        gsd_ratio = gsd_cm / (min_gsd + 1e-9)
+        # HEURISTIC: task GSD utility curve tuning
+        gsd_factor = 1.0 / (1.0 + np.exp(6.0 * (gsd_ratio - 0.85)))
+
+        # Blend NIIRS quality with GSD task-relevance
+        niirs_quality = min(niirs / 7.0, 1.0)
+        utility = float(niirs_quality * gsd_factor)
 
         return ModelOutput(
             values={

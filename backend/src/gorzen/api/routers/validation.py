@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -33,7 +35,8 @@ async def create_odm_task(req: ODMTaskRequest) -> dict:
             status_code=501,
             detail="PyODM not installed. Install with: pip install gorzen[odm]",
         )
-    return run_odm_task(
+    return await asyncio.to_thread(
+        run_odm_task,
         host=req.host,
         port=req.port,
         images=req.images,

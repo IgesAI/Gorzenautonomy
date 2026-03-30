@@ -31,22 +31,22 @@ export const glassMaterials = {
   standard: {
     className: 'glass-panel',
     style: {
-      background: 'rgba(15, 20, 40, 0.72)',
+      background: 'rgba(8, 8, 8, 0.80)',
       backdropFilter: 'blur(20px)',
       WebkitBackdropFilter: 'blur(20px)',
-      border: '1px solid rgba(255, 255, 255, 0.10)',
-      boxShadow: '0 8px 32px rgba(0, 0, 0, 0.35), 0 1px 0 rgba(255, 255, 255, 0.05) inset',
+      border: '1px solid rgba(255, 255, 255, 0.08)',
+      boxShadow: '0 8px 32px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 255, 255, 0.03) inset',
       borderRadius: '14px',
     },
   },
   elevated: {
     className: 'glass-panel-elevated',
     style: {
-      background: 'rgba(20, 28, 55, 0.82)',
+      background: 'rgba(14, 14, 14, 0.88)',
       backdropFilter: 'blur(40px)',
       WebkitBackdropFilter: 'blur(40px)',
-      border: '1px solid rgba(255, 255, 255, 0.16)',
-      boxShadow: '0 12px 40px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 255, 255, 0.07) inset',
+      border: '1px solid rgba(255, 255, 255, 0.14)',
+      boxShadow: '0 12px 40px rgba(0, 0, 0, 0.55), 0 1px 0 rgba(255, 255, 255, 0.05) inset',
       borderRadius: '14px',
     },
   },

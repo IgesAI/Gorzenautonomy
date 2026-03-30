@@ -53,6 +53,7 @@ export interface EnvironmentSnapshot {
 
 interface EnvironmentIntelProps {
   onEnvironmentData?: (snapshot: EnvironmentSnapshot) => void;
+  sharedLocation?: { lat: number; lon: number } | null;
 }
 
 const FLIGHT_CAT_COLORS: Record<string, string> = {
@@ -157,7 +158,7 @@ function MetricCard({ label, value, unit, color }: { label: string; value: strin
   );
 }
 
-export function EnvironmentIntel({ onEnvironmentData }: EnvironmentIntelProps) {
+export function EnvironmentIntel({ onEnvironmentData, sharedLocation }: EnvironmentIntelProps) {
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const [solar, setSolar] = useState<SolarData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -165,6 +166,7 @@ export function EnvironmentIntel({ onEnvironmentData }: EnvironmentIntelProps) {
   const [lat, setLat] = useState(35.0);
   const [lon, setLon] = useState(-106.6);
   const [geoStatus, setGeoStatus] = useState<'idle' | 'locating' | 'success' | 'denied'>('idle');
+  const [usedSharedGeo, setUsedSharedGeo] = useState(false);
 
   const fetchData = useCallback(async (fetchLat: number, fetchLon: number) => {
     setLoading(true);
@@ -221,9 +223,24 @@ export function EnvironmentIntel({ onEnvironmentData }: EnvironmentIntelProps) {
     );
   }, [fetchData, lat, lon]);
 
-  // On mount: try geolocation, fall back to defaults
+  // Use shared location from AppShell when it arrives
   useEffect(() => {
-    requestGeolocation();
+    if (sharedLocation && !usedSharedGeo) {
+      const newLat = Math.round(sharedLocation.lat * 1000) / 1000;
+      const newLon = Math.round(sharedLocation.lon * 1000) / 1000;
+      setLat(newLat);
+      setLon(newLon);
+      setGeoStatus('success');
+      setUsedSharedGeo(true);
+      fetchData(newLat, newLon);
+    }
+  }, [sharedLocation, usedSharedGeo, fetchData]);
+
+  // On mount: if no shared location yet, try geolocation as fallback
+  useEffect(() => {
+    if (!sharedLocation) {
+      requestGeolocation();
+    }
   }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   return (

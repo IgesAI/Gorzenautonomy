@@ -82,18 +82,20 @@ export function DroneDiagram({ selected, onSelect, schema }: DroneDiagramProps) 
       <div className="absolute inset-0">
         {/* Base drone: white wireframe tinted to dark blue via brightness + sepia + hue-rotate */}
         <img
-          src="/wtf.png"
+          src="/drone-hero.png"
           alt="VTOL drone bird's eye view"
           className="absolute inset-0 w-full h-full object-contain select-none pointer-events-none"
           style={{ filter: 'brightness(0.55) sepia(1) hue-rotate(190deg) saturate(3)' }}
+          loading="lazy"
           draggable={false}
         />
         {/* Purple-tinted copy of drone, revealed by animated clip-path sweep */}
         <img
-          src="/wtf.png"
+          src="/drone-hero.png"
           alt=""
           className="absolute inset-0 w-full h-full object-contain select-none pointer-events-none drone-sweep-clip"
           style={{ filter: 'brightness(0.7) sepia(1) hue-rotate(250deg) saturate(5)' }}
+          loading="lazy"
           draggable={false}
           aria-hidden
         />

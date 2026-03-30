@@ -17,6 +17,13 @@ interface MetadataFormProps {
 }
 
 export function MetadataForm({ subsystem, schema, values, onValueChange }: MetadataFormProps) {
+  const handleChange = useCallback(
+    (name: string, value: any) => {
+      onValueChange(subsystem, name, value);
+    },
+    [subsystem, onValueChange],
+  );
+
   if (!schema) {
     return (
       <div className="flex items-center justify-center h-48">
@@ -46,13 +53,6 @@ export function MetadataForm({ subsystem, schema, values, onValueChange }: Metad
     if (!groups.has(group)) groups.set(group, []);
     groups.get(group)!.push([name, param]);
   }
-
-  const handleChange = useCallback(
-    (name: string, value: any) => {
-      onValueChange(subsystem, name, value);
-    },
-    [subsystem, onValueChange],
-  );
 
   return (
     <div>

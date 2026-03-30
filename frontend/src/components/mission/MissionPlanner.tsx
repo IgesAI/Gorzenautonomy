@@ -24,31 +24,48 @@ interface TerrainPoint { latitude: number; longitude: number; elevation_m: numbe
 
 const CAMERA_ACTIONS = ['none', 'photo', 'start_video', 'stop_video'] as const;
 
-export function MissionPlanner() {
+interface MissionPlannerProps {
+  sharedLocation?: { lat: number; lon: number } | null;
+  /** Twin used for physics-based endurance preview (``default`` = unsaved template). */
+  twinId?: string;
+  /** Mission config from sidebar editor — seeds default altitude, speed, endurance */
+  missionConfig?: { nominal_altitude_m: number; nominal_speed_ms: number; min_endurance_min: number } | null;
+}
+
+export function MissionPlanner({ sharedLocation, twinId = 'default', missionConfig }: MissionPlannerProps) {
   const [waypoints, setWaypoints] = useState<GlobeWaypoint[]>([]);
   const [analysis, setAnalysis] = useState<MissionAnalysis | null>(null);
   const [dronePosition, setDronePosition] = useState<{ lat: number; lon: number; alt: number } | null>(null);
   const [homePosition, setHomePosition] = useState<{ lat: number; lon: number } | null>(null);
-  const [defaultAlt, setDefaultAlt] = useState(100);
-  const [defaultSpeed, setDefaultSpeed] = useState(15);
+  const [defaultAlt, setDefaultAlt] = useState(missionConfig?.nominal_altitude_m ?? 100);
+  const [defaultSpeed, setDefaultSpeed] = useState(missionConfig?.nominal_speed_ms ?? 15);
   const [status, setStatus] = useState<string | null>(null);
   const [weather, setWeather] = useState<WeatherOverlay | null>(null);
   const [editingWp, setEditingWp] = useState<number | null>(null);
   const [geofenceRadius, setGeofenceRadius] = useState(0);
   const [terrainProfile, setTerrainProfile] = useState<TerrainPoint[] | null>(null);
   const [terrainLoading, setTerrainLoading] = useState(false);
+  const [enduranceMinutes, setEnduranceMinutes] = useState(missionConfig?.min_endurance_min ?? 25);
   const flyToMeRef = useRef<(() => void) | null>(null);
 
-  // --- Data fetching effects (unchanged) ---
+  useEffect(() => {
+    if (missionConfig) {
+      setDefaultAlt(missionConfig.nominal_altitude_m);
+      setDefaultSpeed(missionConfig.nominal_speed_ms);
+      setEnduranceMinutes(missionConfig.min_endurance_min);
+    }
+  }, [missionConfig]);
 
   useEffect(() => {
-    if (navigator.geolocation) {
+    if (sharedLocation) {
+      setHomePosition(sharedLocation);
+    } else if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => setHomePosition({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
-        () => setHomePosition({ lat: 41.905, lon: -84.632 }),
+        () => setHomePosition({ lat: 35.0, lon: -106.6 }),
       );
     }
-  }, []);
+  }, [sharedLocation]);
 
   useEffect(() => {
     if (!homePosition) return;
@@ -76,25 +93,70 @@ export function MissionPlanner() {
   }, [homePosition]);
 
   useEffect(() => {
-    let active = true;
-    const poll = async () => {
+    let cancelled = false;
+    api.envelope
+      .endurancePreview(twinId)
+      .then((e) => {
+        if (!cancelled) setEnduranceMinutes(Math.max(1, e.endurance_minutes_effective || 1));
+      })
+      .catch(() => {
+        if (!cancelled) setEnduranceMinutes(25);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [twinId]);
+
+  useEffect(() => {
+    let stopped = false;
+    let reconnect: number | undefined;
+    let ws: WebSocket | null = null;
+
+    const open = () => {
+      if (stopped) return;
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const base = `${proto}//${window.location.host}/api/telemetry/ws`;
+      let url = base;
       try {
-        const data = await api.telemetry.status();
-        if (data.connected) {
-          const snap = await api.telemetry.snapshot();
-          if (snap.position && active) {
+        const tok = localStorage.getItem('gorzen_token');
+        if (tok) url = `${base}?token=${encodeURIComponent(tok)}`;
+      } catch {
+        /* ignore */
+      }
+      ws = new WebSocket(url);
+      ws.onmessage = (ev) => {
+        try {
+          const snap = JSON.parse(ev.data as string) as {
+            position?: { latitude_deg: number; longitude_deg: number; relative_altitude_m?: number };
+            connection?: { connected?: boolean };
+          };
+          const pos = snap?.position;
+          const conn = snap?.connection;
+          if (conn?.connected && pos) {
             setDronePosition({
-              lat: snap.position.latitude_deg,
-              lon: snap.position.longitude_deg,
-              alt: snap.position.relative_altitude_m ?? 0,
+              lat: pos.latitude_deg,
+              lon: pos.longitude_deg,
+              alt: pos.relative_altitude_m ?? 0,
             });
           }
+        } catch {
+          /* ignore */
         }
-      } catch { /* not connected */ }
+      };
+      ws.onclose = () => {
+        if (!stopped) reconnect = window.setTimeout(open, 2000);
+      };
+      ws.onerror = () => {
+        ws?.close();
+      };
     };
-    const interval = setInterval(poll, 2000);
-    poll();
-    return () => { active = false; clearInterval(interval); };
+
+    open();
+    return () => {
+      stopped = true;
+      if (reconnect) clearTimeout(reconnect);
+      ws?.close();
+    };
   }, []);
 
   useEffect(() => {
@@ -375,12 +437,12 @@ export function MissionPlanner() {
           <div className="grid grid-cols-3 gap-2">
             <div>
               <label className="text-[10px] text-white/40 block mb-1">Alt (m)</label>
-              <input type="number" value={defaultAlt} onChange={(e) => setDefaultAlt(Number(e.target.value))}
+              <input type="number" aria-label="Default altitude" value={defaultAlt} onChange={(e) => setDefaultAlt(Number(e.target.value))}
                 className="glass-input w-full text-xs px-2 py-1.5" />
             </div>
             <div>
               <label className="text-[10px] text-white/40 block mb-1">Speed</label>
-              <input type="number" value={defaultSpeed} onChange={(e) => setDefaultSpeed(Number(e.target.value))}
+              <input type="number" aria-label="Default speed" value={defaultSpeed} onChange={(e) => setDefaultSpeed(Number(e.target.value))}
                 className="glass-input w-full text-xs px-2 py-1.5" />
             </div>
             <div>
@@ -455,7 +517,7 @@ export function MissionPlanner() {
                         </div>
                       </div>
                       {isEditing ? <ChevronDown size={11} className="text-white/30" /> : <ChevronRight size={11} className="text-white/15" />}
-                      <button onClick={(e) => { e.stopPropagation(); handleRemoveWaypoint(i); }}
+                      <button aria-label="Remove waypoint" onClick={(e) => { e.stopPropagation(); handleRemoveWaypoint(i); }}
                         className="opacity-0 group-hover:opacity-100 text-red-400/60 hover:text-red-400 transition-all p-1">
                         <Trash2 size={11} />
                       </button>
@@ -467,13 +529,13 @@ export function MissionPlanner() {
                         <div className="grid grid-cols-2 gap-2">
                           <div>
                             <label className="text-[9px] text-white/30 block mb-0.5">Altitude (m)</label>
-                            <input type="number" value={wp.altitude_m}
+                            <input type="number" aria-label="Waypoint altitude" value={wp.altitude_m}
                               onChange={(e) => handleUpdateWaypoint(i, 'altitude_m', Number(e.target.value))}
                               className="glass-input w-full text-[10px] px-2 py-1" />
                           </div>
                           <div>
                             <label className="text-[9px] text-white/30 block mb-0.5">Speed (m/s)</label>
-                            <input type="number" value={wp.speed_ms ?? defaultSpeed}
+                            <input type="number" aria-label="Waypoint speed" value={wp.speed_ms ?? defaultSpeed}
                               onChange={(e) => handleUpdateWaypoint(i, 'speed_ms', Number(e.target.value))}
                               className="glass-input w-full text-[10px] px-2 py-1" />
                           </div>
@@ -481,16 +543,20 @@ export function MissionPlanner() {
                         <div className="grid grid-cols-2 gap-2">
                           <div>
                             <label className="text-[9px] text-white/30 block mb-0.5">Loiter (s)</label>
-                            <input type="number" value={wp.loiter_time_s ?? 0}
+                            <input type="number" aria-label="Loiter time" value={wp.loiter_time_s ?? 0}
                               onChange={(e) => handleUpdateWaypoint(i, 'loiter_time_s', Number(e.target.value))}
                               className="glass-input w-full text-[10px] px-2 py-1" />
                           </div>
                           <div>
                             <label className="text-[9px] text-white/30 block mb-0.5">Camera</label>
-                            <select value={wp.camera_action ?? 'none'}
+                            <select aria-label="Camera action" value={wp.camera_action ?? 'none'}
                               onChange={(e) => handleUpdateWaypoint(i, 'camera_action', e.target.value)}
-                              className="glass-input w-full text-[10px] px-2 py-1 bg-transparent">
-                              {CAMERA_ACTIONS.map((a) => <option key={a} value={a}>{a}</option>)}
+                              className="glass-select-sm w-full text-[10px]">
+                              {CAMERA_ACTIONS.map((a) => (
+                                <option key={a} value={a} className="bg-neutral-900 text-white/90">
+                                  {a === 'none' ? 'None' : a === 'photo' ? 'Photo' : a === 'start_video' ? 'Start Video' : 'Stop Video'}
+                                </option>
+                              ))}
                             </select>
                           </div>
                         </div>
@@ -542,8 +608,7 @@ export function MissionPlanner() {
                   <Battery size={9} className="text-amber-400" /> Battery Estimate
                 </h4>
                 {(() => {
-                  // Simple battery model: assume 25 min total endurance
-                  const enduranceMin = 25;
+                  const enduranceMin = enduranceMinutes;
                   const usagePct = Math.min(100, (analysis.estimated_duration_min / enduranceMin) * 100);
                   const remainPct = 100 - usagePct;
                   const isOk = remainPct >= 30;
@@ -553,7 +618,7 @@ export function MissionPlanner() {
                       <div className="flex justify-between text-[10px] font-mono mb-1">
                         <span className="text-white/40">Usage</span>
                         <span className={isOk ? 'text-emerald-400' : isWarn ? 'text-amber-400' : 'text-red-400'}>
-                          {usagePct.toFixed(0)}% ({analysis.estimated_duration_min} / {enduranceMin} min)
+                          {usagePct.toFixed(0)}% ({analysis.estimated_duration_min} / {enduranceMin.toFixed(0)} min)
                         </span>
                       </div>
                       <div className="h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
@@ -562,6 +627,9 @@ export function MissionPlanner() {
                             width: `${usagePct}%`,
                             backgroundColor: isOk ? '#10b981' : isWarn ? '#f59e0b' : '#ef4444',
                           }} />
+                      </div>
+                      <div className="text-[9px] mt-1 text-white/25">
+                        Based on twin physics preview (cruise point). Not a flight-time guarantee.
                       </div>
                       <div className="text-[9px] mt-1" style={{ color: isOk ? '#10b981' : isWarn ? '#f59e0b' : '#ef4444' }}>
                         {remainPct.toFixed(0)}% remaining{!isOk && !isWarn ? ' — INSUFFICIENT' : isWarn ? ' — LOW' : ''}

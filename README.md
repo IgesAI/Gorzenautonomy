@@ -1,4 +1,4 @@
-# Gorzenautonomy
+gitTi want to # Gorzenautonomy
 
 Digital-Twin Platform for VTOL Fleet Configuration and Perception-Constrained Autonomous Mission Planning.
 
@@ -71,9 +71,9 @@ pytest -v
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md) – Data flow, model chain, Mermaid diagrams
-- [Formula Audit](docs/FORMULA_AUDIT.md) – Physics formulas, cross-references, corrections
-- [Output Audit](docs/OUTPUT_AUDIT.md) – MCP, UQ, sensitivity, accuracy
-- [Audit Remediation](docs/AUDIT_REMEDIATION.md) – CI, tests, lint fixes
+- Formula Audit (removed)
+- Output Audit (removed)
+- Audit Remediation (removed)
 
 ## License
 

@@ -15,6 +15,7 @@ import {
   Math as CesiumMath,
   UrlTemplateImageryProvider,
   HorizontalOrigin,
+  Ion,
 } from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
 
@@ -72,6 +73,11 @@ export function CesiumGlobe({
   useEffect(() => {
     if (!containerRef.current || viewerRef.current) return;
 
+    const ionTok = import.meta.env.VITE_CESIUM_ION_TOKEN;
+    if (ionTok) {
+      Ion.defaultAccessToken = ionTok;
+    }
+
     const viewer = new Viewer(containerRef.current, {
       animation: false,
       baseLayerPicker: false,
@@ -115,11 +121,8 @@ export function CesiumGlobe({
     viewer.scene.backgroundColor = Color.fromCssColorString('#0a0e1a');
     viewer.scene.globe.baseColor = Color.fromCssColorString('#1a1f35');
 
-    // Initial camera
-    const homeLat = homePosition?.lat ?? 41.905;
-    const homeLon = homePosition?.lon ?? -84.632;
     viewer.camera.flyTo({
-      destination: Cartesian3.fromDegrees(homeLon, homeLat, 50000),
+      destination: Cartesian3.fromDegrees(-84.632, 41.905, 50000),
       duration: 0,
     });
 
@@ -136,6 +139,15 @@ export function CesiumGlobe({
       }
     };
   }, []);
+
+  // Fly to home position when it changes
+  useEffect(() => {
+    if (!viewerRef.current || !homePosition) return;
+    viewerRef.current.camera.flyTo({
+      destination: Cartesian3.fromDegrees(homePosition.lon, homePosition.lat, 2000),
+      duration: 2.0,
+    });
+  }, [homePosition]);
 
   // Interaction handlers: drag-to-move, double-click-to-add, right-click-to-remove
   useEffect(() => {

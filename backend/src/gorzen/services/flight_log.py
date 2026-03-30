@@ -258,6 +258,134 @@ def extract_calibration_data(data: bytes) -> dict[str, Any]:
     return result
 
 
+def analyze_vibration(data: bytes) -> dict[str, Any]:
+    """Extract vibration metrics from sensor_combined topic.
+
+    Computes peak-to-peak acceleration on each axis and flags
+    if above the PX4-recommended 2-3 m/s^2 threshold.
+    """
+    if not PYULOG_AVAILABLE:
+        return {"available": False}
+
+    ulog = ULog(io.BytesIO(data))
+    matched = [d for d in ulog.data_list if d.name == "sensor_combined"]
+    if not matched:
+        return {"available": False, "reason": "sensor_combined topic not in log"}
+
+    d = matched[0]
+    result: dict[str, Any] = {"available": True, "axes": {}}
+    threshold = 3.0
+    overall_pass = True
+
+    for axis_idx, axis_label in enumerate(["x", "y", "z"]):
+        field = f"accelerometer_m_s2[{axis_idx}]"
+        if field not in d.data:
+            continue
+        vals = np.array(d.data[field], dtype=float)
+        p2p = float(np.max(vals) - np.min(vals))
+        rms = float(np.sqrt(np.mean(vals**2)))
+        std = float(np.std(vals))
+        axis_pass = p2p < threshold
+        if not axis_pass:
+            overall_pass = False
+        result["axes"][axis_label] = {
+            "peak_to_peak_ms2": round(p2p, 3),
+            "rms_ms2": round(rms, 3),
+            "std_ms2": round(std, 4),
+            "pass": axis_pass,
+        }
+
+    result["threshold_ms2"] = threshold
+    result["overall_pass"] = overall_pass
+    return result
+
+
+def analyze_flight_quality(data: bytes) -> dict[str, Any]:
+    """Compute flight quality metrics: battery health, endurance accuracy, PID tracking."""
+    if not PYULOG_AVAILABLE:
+        return {}
+
+    ulog = ULog(io.BytesIO(data))
+    quality: dict[str, Any] = {}
+
+    # Battery health
+    batt_data = [d for d in ulog.data_list if d.name == "battery_status"]
+    if batt_data:
+        d = batt_data[0]
+        if "voltage_v" in d.data:
+            voltages = np.array(d.data["voltage_v"], dtype=float)
+            quality["battery"] = {
+                "start_v": round(float(voltages[0]), 2),
+                "end_v": round(float(voltages[-1]), 2),
+                "min_v": round(float(np.min(voltages)), 2),
+                "max_v": round(float(np.max(voltages)), 2),
+                "sag_v": round(float(voltages[0] - np.min(voltages)), 2),
+            }
+        if "current_a" in d.data:
+            currents = np.array(d.data["current_a"], dtype=float)
+            quality["battery"]["avg_current_a"] = round(float(np.mean(currents)), 2)
+            quality["battery"]["max_current_a"] = round(float(np.max(currents)), 2)
+        if "discharged_mah" in d.data:
+            discharged = np.array(d.data["discharged_mah"], dtype=float)
+            quality["battery"]["total_discharged_mah"] = round(float(discharged[-1]), 0)
+
+    # Duration
+    start = ulog.start_timestamp / 1e6 if ulog.start_timestamp else 0
+    last = ulog.last_timestamp / 1e6 if ulog.last_timestamp else 0
+    quality["duration_s"] = round(last - start, 1)
+
+    # Airspeed tracking
+    airspeed_data = [d for d in ulog.data_list if d.name == "airspeed_validated"]
+    if airspeed_data:
+        d = airspeed_data[0]
+        if "true_airspeed_m_s" in d.data:
+            tas = np.array(d.data["true_airspeed_m_s"], dtype=float)
+            quality["airspeed"] = {
+                "mean_ms": round(float(np.mean(tas)), 1),
+                "max_ms": round(float(np.max(tas)), 1),
+                "std_ms": round(float(np.std(tas)), 2),
+            }
+
+    # Estimator accuracy
+    est_data = [d for d in ulog.data_list if d.name == "estimator_status"]
+    if est_data:
+        d = est_data[0]
+        q_est: dict[str, Any] = {}
+        if "pos_horiz_accuracy" in d.data:
+            h_acc = np.array(d.data["pos_horiz_accuracy"], dtype=float)
+            q_est["mean_horiz_accuracy_m"] = round(float(np.mean(h_acc)), 2)
+        if "pos_vert_accuracy" in d.data:
+            v_acc = np.array(d.data["pos_vert_accuracy"], dtype=float)
+            q_est["mean_vert_accuracy_m"] = round(float(np.mean(v_acc)), 2)
+        if q_est:
+            quality["estimator"] = q_est
+
+    return quality
+
+
+def full_analysis(data: bytes, filename: str = "upload.ulg") -> dict[str, Any]:
+    """Single-pass analysis: summary, calibration data, vibration, and quality scoring."""
+    summary = parse_ulog(data, filename=filename)
+    calibration = extract_calibration_data(data)
+    vibration = analyze_vibration(data)
+    quality = analyze_flight_quality(data)
+
+    return {
+        "summary": {
+            "filename": summary.filename,
+            "duration_s": summary.duration_s,
+            "topics": summary.topics,
+            "parameter_count": len(summary.parameters),
+            "message_count": summary.message_count,
+            "vehicle_uuid": summary.vehicle_uuid,
+            "software_version": summary.software_version,
+        },
+        "calibration": calibration,
+        "vibration": vibration,
+        "quality": quality,
+    }
+
+
 def get_available_topics() -> dict[str, Any]:
     """Return the list of calibration topics and their fields."""
     return {

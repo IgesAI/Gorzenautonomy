@@ -1,42 +1,38 @@
-import React, { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { AppShell } from './components/layout/AppShell';
-import { useTwinSchema } from './hooks/useTwin';
-import { api } from './api/client';
-import type { EnvelopeResponse } from './types/envelope';
+import type { MissionConfig } from './data/missions';
 
 export default function App() {
-  const { data: schema, isLoading: schemaLoading } = useTwinSchema();
-  const [envelope, setEnvelope] = useState<EnvelopeResponse | null>(null);
-  const [computing, setComputing] = useState(false);
+  const [selectedAircraftId, setSelectedAircraftId] = useState<string | null>(null);
+  const [missionConfig, setMissionConfig] = useState<MissionConfig | null>(null);
+  const [geoLocation, setGeoLocation] = useState<{ lat: number; lon: number } | null>(null);
+  const [envSnapshot, setEnvSnapshot] = useState<{ wind_ms?: number; temperature_c?: number }>({});
 
-  const handleComputeEnvelope = useCallback(
-    async (fullParams: Record<string, Record<string, any>> = {}) => {
-      setComputing(true);
-      try {
-        const result = await api.envelope.computeDefault({
-          twin_id: 'default',
-          speed_range_ms: [0.5, 35.0],
-          altitude_range_m: [10.0, 200.0],
-          grid_resolution: 20,
-          param_overrides: fullParams,
-        });
-        setEnvelope(result);
-      } catch (err) {
-        console.error('Envelope computation failed:', err);
-      } finally {
-        setComputing(false);
-      }
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setGeoLocation({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+      () => {},
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  }, []);
+
+  const handleEnvUpdate = useCallback(
+    (wind_ms: number, temperature_c: number) => {
+      setEnvSnapshot({ wind_ms, temperature_c });
     },
-    []
+    [],
   );
 
   return (
     <AppShell
-      schema={schema}
-      schemaLoading={schemaLoading}
-      envelope={envelope}
-      computing={computing}
-      onComputeEnvelope={handleComputeEnvelope}
+      selectedAircraftId={selectedAircraftId}
+      onSelectAircraft={setSelectedAircraftId}
+      missionConfig={missionConfig}
+      onMissionConfigChange={setMissionConfig}
+      geoLocation={geoLocation}
+      envSnapshot={envSnapshot}
+      onEnvUpdate={handleEnvUpdate}
     />
   );
 }

@@ -3,15 +3,20 @@
 from __future__ import annotations
 
 import asyncio
-import json
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from gorzen.api.deps import decode_token
+from gorzen.config import settings
+from gorzen.db import calibration_repo, telemetry_repo
+from gorzen.db.session import get_session
 from gorzen.services.flight_log import (
     extract_calibration_data,
     extract_timeseries,
+    full_analysis,
     get_available_topics,
     parse_ulog,
 )
@@ -23,7 +28,18 @@ from gorzen.services.px4_params import (
     twin_to_px4,
 )
 
+MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB
+
+
+async def read_upload_with_limit(file: UploadFile, max_bytes: int = MAX_UPLOAD_BYTES) -> bytes:
+    data = await file.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise HTTPException(413, f"File too large (max {max_bytes // (1024 * 1024)} MB)")
+    return data
+
 router = APIRouter()
+# WebSocket is registered separately without global HTTP auth (use ?token= when JWT is enabled).
+ws_router = APIRouter()
 
 
 # --- Connection ---
@@ -71,14 +87,24 @@ async def get_telemetry_snapshot() -> dict[str, Any]:
     return telemetry_service.get_snapshot()
 
 
-@router.websocket("/ws")
+@ws_router.websocket("/ws")
 async def telemetry_websocket(ws: WebSocket) -> None:
     """WebSocket endpoint for live telemetry streaming at ~10 Hz."""
+    if settings.auth_enabled:
+        token = ws.query_params.get("token")
+        if not token:
+            await ws.close(code=4401)
+            return
+        try:
+            decode_token(token)
+        except HTTPException:
+            await ws.close(code=4401)
+            return
     await ws.accept()
     q = telemetry_service.subscribe()
     try:
         while True:
-            frame = await asyncio.wait_for(q.get(), timeout=5.0)
+            await asyncio.wait_for(q.get(), timeout=5.0)
             await ws.send_json(telemetry_service.get_snapshot())
     except (WebSocketDisconnect, asyncio.TimeoutError):
         pass
@@ -134,7 +160,7 @@ async def upload_flight_log(file: UploadFile) -> dict[str, Any]:
     if not file.filename or not file.filename.endswith(".ulg"):
         raise HTTPException(status_code=400, detail="Only .ulg (PX4 uLog) files are supported")
 
-    data = await file.read()
+    data = await read_upload_with_limit(file)
     if len(data) == 0:
         raise HTTPException(status_code=400, detail="Empty file")
 
@@ -162,7 +188,7 @@ async def extract_calibration(file: UploadFile) -> dict[str, Any]:
     if not file.filename or not file.filename.endswith(".ulg"):
         raise HTTPException(status_code=400, detail="Only .ulg files supported")
 
-    data = await file.read()
+    data = await read_upload_with_limit(file)
     try:
         result = extract_calibration_data(data)
     except Exception as e:
@@ -179,7 +205,7 @@ async def extract_log_timeseries(
     downsample: int = Query(500, description="Max data points"),
 ) -> dict[str, Any]:
     """Extract a specific timeseries from a uLog file."""
-    data = await file.read()
+    data = await read_upload_with_limit(file)
     try:
         ts = extract_timeseries(data, topic, field, downsample)
     except ValueError as e:
@@ -206,3 +232,109 @@ async def extract_log_timeseries(
 async def get_log_topics() -> dict[str, Any]:
     """Get the list of supported calibration topics and fields."""
     return {"topics": get_available_topics()}
+
+
+@router.post("/logs/analyze")
+async def analyze_flight_log(
+    file: UploadFile,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, Any]:
+    """Upload, parse, analyze, and persist a PX4 .ulg flight log in one call.
+
+    Returns summary, calibration data, vibration analysis, and flight quality
+    scores. Also persists a record to telemetry_logs for future retrieval.
+    """
+    if not file.filename or not file.filename.endswith(".ulg"):
+        raise HTTPException(status_code=400, detail="Only .ulg (PX4 uLog) files are supported")
+
+    data = await read_upload_with_limit(file)
+    if len(data) == 0:
+        raise HTTPException(status_code=400, detail="Empty file")
+
+    try:
+        result = full_analysis(data, filename=file.filename)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Failed to analyze uLog: {e}")
+
+    summary = result["summary"]
+    try:
+        log_record = await telemetry_repo.create_telemetry_log(
+            session,
+            source_format="ulg",
+            file_path=summary["filename"],
+            vehicle_id=summary.get("vehicle_uuid", ""),
+            firmware_version=summary.get("software_version", ""),
+            file_size_bytes=len(data),
+            record_count=summary.get("message_count", 0),
+            topics=summary.get("topics", []),
+            log_metadata={
+                "duration_s": summary.get("duration_s", 0),
+                "parameter_count": summary.get("parameter_count", 0),
+                "vibration_pass": result.get("vibration", {}).get("overall_pass"),
+            },
+        )
+        await session.commit()
+        result["log_id"] = str(log_record.id)
+    except Exception as e:
+        result["log_id"] = None
+        result["persist_error"] = str(e)
+
+    return result
+
+
+class CreateCalibrationFromLogRequest(BaseModel):
+    log_id: str
+    twin_id: str
+    mission_type: str = "flight_log_import"
+
+
+@router.post("/logs/create-calibration")
+async def create_calibration_from_log(
+    body: CreateCalibrationFromLogRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, Any]:
+    """Create a calibration run record from a previously analyzed flight log.
+
+    Links the log_id to a calibration_run row so PX4 parameters from the log
+    can be compared against the digital twin model parameters.
+    """
+    from uuid import UUID as _UUID
+    import hashlib
+
+    try:
+        log_uuid = _UUID(body.log_id)
+        twin_uuid = _UUID(body.twin_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+
+    log_row = await telemetry_repo.get_telemetry_log(session, log_uuid)
+    if log_row is None:
+        raise HTTPException(status_code=404, detail="Telemetry log not found")
+
+    config_hash = hashlib.sha256(
+        f"{body.twin_id}:{body.log_id}:{body.mission_type}".encode()
+    ).hexdigest()[:16]
+
+    posteriors: dict[str, Any] = {}
+    if log_row.log_metadata and isinstance(log_row.log_metadata, dict):
+        posteriors["source"] = "flight_log"
+        posteriors["log_id"] = body.log_id
+
+    run = await calibration_repo.create_calibration_run(
+        session,
+        twin_id=twin_uuid,
+        mission_type=body.mission_type,
+        config_hash=config_hash,
+        regime="imported",
+        posteriors_json=posteriors,
+        n_observations=log_row.record_count or 0,
+        log_ids=[body.log_id],
+    )
+    await session.commit()
+
+    return {
+        "calibration_run_id": str(run.id),
+        "twin_id": body.twin_id,
+        "log_id": body.log_id,
+        "status": "created",
+    }

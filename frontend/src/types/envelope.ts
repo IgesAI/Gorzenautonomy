@@ -46,4 +46,5 @@ export interface EnvelopeRequest {
   grid_resolution: number;
   uq_method: string;
   mc_samples: number;
+  param_overrides?: Record<string, Record<string, unknown>>;
 }

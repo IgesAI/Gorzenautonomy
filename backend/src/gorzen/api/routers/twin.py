@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from gorzen.db import audit_repo, twin_repo
+from gorzen.db.session import get_session
 from gorzen.schemas.twin_graph import VehicleTwin
 
 router = APIRouter()
-
-# In-memory store (replace with DB in production)
-_twins: dict[str, VehicleTwin] = {}
 
 SUBSYSTEM_KEYS = [
     "airframe", "lift_propulsion", "cruise_propulsion", "fuel_system",
@@ -49,7 +49,6 @@ async def get_twin_schema() -> dict[str, Any]:
     twin = _default_twin()
     dump = twin.model_dump()
 
-    # Build the mission_profile subsystem from its nested structure
     mp = dump.pop("mission_profile", {})
     env_params = mp.get("environment", {})
     constraint_params = mp.get("constraints", {})
@@ -87,37 +86,81 @@ async def get_twin_schema() -> dict[str, Any]:
 
 
 @router.post("/", response_model=VehicleTwin)
-async def create_twin(twin: VehicleTwin) -> VehicleTwin:
-    twin = twin.with_hash()
-    _twins[str(twin.twin_id)] = twin
-    return twin
+async def create_twin(
+    twin: VehicleTwin,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> VehicleTwin:
+    existing = await twin_repo.get_vehicle_twin(session, str(twin.twin_id))
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="Twin ID already exists — use PUT to update")
+    result = await twin_repo.upsert_vehicle_twin(session, twin)
+    await audit_repo.record_event(
+        session,
+        event_type="twin.created",
+        twin_id=result.twin_id,
+        payload={"name": result.name},
+    )
+    return result
 
 
 @router.get("/", response_model=list[VehicleTwin])
-async def list_twins() -> list[VehicleTwin]:
-    return list(_twins.values())
+async def list_twins(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> list[VehicleTwin]:
+    return await twin_repo.list_vehicle_twins(session)
 
 
 @router.get("/{twin_id}", response_model=VehicleTwin)
-async def get_twin(twin_id: str) -> VehicleTwin:
-    if twin_id not in _twins:
+async def get_twin(
+    twin_id: str,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> VehicleTwin:
+    twin = await twin_repo.get_vehicle_twin(session, twin_id)
+    if twin is None:
         raise HTTPException(status_code=404, detail="Twin not found")
-    return _twins[twin_id]
-
-
-@router.put("/{twin_id}", response_model=VehicleTwin)
-async def update_twin(twin_id: str, twin: VehicleTwin) -> VehicleTwin:
-    if twin_id not in _twins:
-        raise HTTPException(status_code=404, detail="Twin not found")
-    twin.twin_id = UUID(twin_id)
-    twin = twin.with_hash()
-    _twins[twin_id] = twin
     return twin
 
 
-@router.delete("/{twin_id}")
-async def delete_twin(twin_id: str) -> dict[str, str]:
-    if twin_id not in _twins:
+@router.put("/{twin_id}", response_model=VehicleTwin)
+async def update_twin(
+    twin_id: str,
+    twin: VehicleTwin,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> VehicleTwin:
+    try:
+        twin.twin_id = UUID(twin_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid twin ID") from None
+    existing = await twin_repo.get_vehicle_twin(session, twin_id)
+    if existing is None:
         raise HTTPException(status_code=404, detail="Twin not found")
-    del _twins[twin_id]
+    twin = twin.with_hash()
+    result = await twin_repo.upsert_vehicle_twin(session, twin)
+    await audit_repo.record_event(
+        session,
+        event_type="twin.updated",
+        twin_id=result.twin_id,
+        payload={"name": result.name},
+    )
+    return result
+
+
+@router.delete("/{twin_id}")
+async def delete_twin(
+    twin_id: str,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, str]:
+    ok = await twin_repo.delete_vehicle_twin(session, twin_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Twin not found")
+    try:
+        uid = UUID(twin_id)
+    except ValueError:
+        uid = None
+    await audit_repo.record_event(
+        session,
+        event_type="twin.deleted",
+        twin_id=uid,
+        payload={"twin_id": twin_id},
+    )
     return {"status": "deleted"}

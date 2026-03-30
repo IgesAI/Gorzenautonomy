@@ -1,7 +1,6 @@
-import React, { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { GlassPanel } from '../layout/GlassPanel';
 import { chartStyles } from '../../theme/chartStyles';
-import { colors } from '../../theme/tokens';
 import { api } from '../../api/client';
 
 interface LogSummary {
@@ -14,6 +13,37 @@ interface LogSummary {
   software_version: string;
 }
 
+interface VibrationAxis {
+  peak_to_peak_ms2: number;
+  rms_ms2: number;
+  std_ms2: number;
+  pass: boolean;
+}
+
+interface VibrationResult {
+  available: boolean;
+  reason?: string;
+  axes?: Record<string, VibrationAxis>;
+  threshold_ms2?: number;
+  overall_pass?: boolean;
+}
+
+interface QualityResult {
+  battery?: {
+    start_v: number;
+    end_v: number;
+    min_v: number;
+    max_v: number;
+    sag_v: number;
+    avg_current_a?: number;
+    max_current_a?: number;
+    total_discharged_mah?: number;
+  };
+  duration_s?: number;
+  airspeed?: { mean_ms: number; max_ms: number; std_ms: number };
+  estimator?: { mean_horiz_accuracy_m?: number; mean_vert_accuracy_m?: number };
+}
+
 interface CalibrationData {
   topics_found: string[];
   data: Record<string, Record<string, number[]>>;
@@ -24,6 +54,24 @@ interface CalibrationData {
     battery_min_v: number;
     flight_duration_s: number;
   };
+}
+
+interface AnalysisResult {
+  summary: LogSummary;
+  calibration: CalibrationData;
+  vibration: VibrationResult;
+  quality: QualityResult;
+  log_id?: string | null;
+}
+
+interface LogRecord {
+  id: string;
+  filename?: string;
+  file_path?: string;
+  source_format: string;
+  duration_s?: number;
+  uploaded_at?: string;
+  log_metadata?: Record<string, any>;
 }
 
 const TOPIC_COLORS: Record<string, string> = {
@@ -82,26 +130,29 @@ function MiniChart({ timestamps, values, color, label, unit, height = 60 }: {
 }
 
 export function FlightLogAnalyzer() {
-  const [summary, setSummary] = useState<LogSummary | null>(null);
-  const [calibration, setCalibration] = useState<CalibrationData | null>(null);
+  const [result, setResult] = useState<AnalysisResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [previousLogs, setPreviousLogs] = useState<LogRecord[]>([]);
   const [selectedTopics, setSelectedTopics] = useState<Set<string>>(new Set(['battery_status', 'vehicle_local_position', 'airspeed_validated']));
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    api.telemetry.listLogs()
+      .then((logs) => setPreviousLogs(logs as unknown as LogRecord[]))
+      .catch(() => {});
+  }, []);
 
   const handleUpload = async (file: File) => {
     setLoading(true);
     setError(null);
-    setSummary(null);
-    setCalibration(null);
+    setResult(null);
     try {
-      // Upload for summary and calibration data in parallel
-      const [sumRes, calRes] = await Promise.all([
-        api.telemetry.uploadLog(file),
-        api.telemetry.uploadCalibration(file),
-      ]);
-      setSummary(sumRes.summary);
-      setCalibration(calRes);
+      const data = await api.telemetry.analyzeLog(file);
+      setResult(data as unknown as AnalysisResult);
+      api.telemetry.listLogs()
+        .then((logs) => setPreviousLogs(logs as unknown as LogRecord[]))
+        .catch(() => {});
     } catch (e: any) {
       setError(e.message || 'Upload failed');
     } finally {
@@ -123,6 +174,11 @@ export function FlightLogAnalyzer() {
     return `${m}m ${sec}s`;
   };
 
+  const summary = result?.summary;
+  const calibration = result?.calibration;
+  const vibration = result?.vibration;
+  const quality = result?.quality;
+
   return (
     <div className="h-full overflow-y-auto space-y-3 p-3">
       {/* Upload */}
@@ -142,20 +198,45 @@ export function FlightLogAnalyzer() {
           }}
         >
           <input
-            ref={fileRef} type="file" accept=".ulg" className="hidden"
+            ref={fileRef} type="file" accept=".ulg" aria-label="Upload PX4 flight log" className="hidden"
             onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f); }}
           />
           {loading ? (
-            <div className="text-white/50 text-sm">Parsing flight log...</div>
+            <div className="text-white/50 text-sm">Analyzing flight log...</div>
           ) : (
             <>
               <div className="text-white/50 text-sm mb-1">Drop .ulg file here or click to browse</div>
-              <div className="text-white/30 text-[10px]">PX4 uLog flight recording</div>
+              <div className="text-white/30 text-[10px]">PX4 uLog flight recording — single-pass analysis</div>
             </>
           )}
         </div>
         {error && <div className="mt-2 text-xs text-red-400">{error}</div>}
       </GlassPanel>
+
+      {/* Previous Logs */}
+      {previousLogs.length > 0 && !summary && (
+        <GlassPanel padding="p-4">
+          <h3 className={`${chartStyles.title} mb-3`}>Previous Logs</h3>
+          <div className="space-y-1.5 max-h-40 overflow-y-auto">
+            {previousLogs.map((log) => (
+              <div key={log.id} className="flex items-center justify-between py-1.5 border-b border-white/[0.04] last:border-0">
+                <div className="flex-1 min-w-0">
+                  <div className="text-[10px] font-mono text-white/70 truncate">{log.file_path || log.id.slice(0, 12)}</div>
+                  <div className="text-[9px] text-white/35">
+                    {log.uploaded_at ? new Date(log.uploaded_at).toLocaleDateString() : ''}
+                    {log.log_metadata?.duration_s ? ` — ${formatDuration(log.log_metadata.duration_s)}` : ''}
+                  </div>
+                </div>
+                {log.log_metadata?.vibration_pass != null && (
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${log.log_metadata.vibration_pass ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+                    {log.log_metadata.vibration_pass ? 'PASS' : 'VIB'}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        </GlassPanel>
+      )}
 
       {summary && (
         <>
@@ -181,30 +262,114 @@ export function FlightLogAnalyzer() {
               <div><span className="text-white/40">Topics:</span> <span className="text-white/70 font-mono">{summary.topics.length}</span></div>
               {summary.software_version && <div><span className="text-white/40">PX4:</span> <span className="text-white/70 font-mono">{summary.software_version}</span></div>}
               {summary.vehicle_uuid && <div><span className="text-white/40">UUID:</span> <span className="text-white/70 font-mono">{summary.vehicle_uuid.slice(0, 12)}</span></div>}
+              {result?.log_id && <div><span className="text-white/40">Log ID:</span> <span className="text-white/70 font-mono">{result.log_id.slice(0, 12)}</span></div>}
             </div>
           </GlassPanel>
 
-          {/* Battery Stats */}
-          {calibration?.stats && (
+          {/* Vibration Analysis */}
+          {vibration?.available && vibration.axes && (
             <GlassPanel padding="p-4">
-              <h3 className={chartStyles.title}>Battery Analysis</h3>
-              <div className="grid grid-cols-4 gap-3 mt-3">
-                <div>
-                  <div className={chartStyles.label}>Start V</div>
-                  <div className="text-sm font-bold font-mono text-emerald-400">{calibration.stats.battery_start_v.toFixed(1)}</div>
-                </div>
-                <div>
-                  <div className={chartStyles.label}>End V</div>
-                  <div className="text-sm font-bold font-mono text-amber-400">{calibration.stats.battery_end_v.toFixed(1)}</div>
-                </div>
-                <div>
-                  <div className={chartStyles.label}>Min V</div>
-                  <div className="text-sm font-bold font-mono text-red-400">{calibration.stats.battery_min_v.toFixed(1)}</div>
-                </div>
-                <div>
-                  <div className={chartStyles.label}>Duration</div>
-                  <div className="text-sm font-bold font-mono text-white/90">{formatDuration(calibration.stats.flight_duration_s)}</div>
-                </div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className={chartStyles.title}>Vibration Analysis</h3>
+                <span className={`text-[9px] font-bold px-2 py-0.5 rounded ${vibration.overall_pass ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+                  {vibration.overall_pass ? 'PASS' : 'FAIL'}
+                </span>
+              </div>
+              <div className="text-[9px] text-white/35 mb-3">
+                Threshold: {vibration.threshold_ms2} m/s² peak-to-peak (PX4 recommended)
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                {Object.entries(vibration.axes).map(([axis, data]) => (
+                  <div key={axis} className="bg-white/[0.04] rounded-lg p-3 border border-white/[0.05]">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] font-bold text-white/60 uppercase">{axis}-axis</span>
+                      <span className={`text-[9px] font-bold ${data.pass ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {data.pass ? 'OK' : 'HIGH'}
+                      </span>
+                    </div>
+                    <div className="text-sm font-mono font-bold" style={{ color: data.pass ? '#10b981' : '#ef4444' }}>
+                      {data.peak_to_peak_ms2.toFixed(2)}
+                    </div>
+                    <div className="text-[9px] text-white/30">m/s² p2p</div>
+                    <div className="text-[9px] text-white/35 mt-1">
+                      RMS: {data.rms_ms2.toFixed(2)} | σ: {data.std_ms2.toFixed(3)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </GlassPanel>
+          )}
+
+          {/* Flight Quality */}
+          {quality && (quality.battery || quality.airspeed || quality.estimator) && (
+            <GlassPanel padding="p-4">
+              <h3 className={`${chartStyles.title} mb-3`}>Flight Quality</h3>
+              <div className="grid grid-cols-2 gap-3">
+                {quality.battery && (
+                  <div className="bg-white/[0.04] rounded-lg p-3 border border-white/[0.05]">
+                    <div className="text-[9px] font-semibold uppercase tracking-wider text-amber-400/70 mb-2">Battery</div>
+                    <div className="space-y-1 text-[10px]">
+                      <div className="flex justify-between">
+                        <span className="text-white/40">Start → End</span>
+                        <span className="font-mono text-white/70">{quality.battery.start_v}V → {quality.battery.end_v}V</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-white/40">Sag</span>
+                        <span className="font-mono" style={{ color: quality.battery.sag_v < 2 ? '#10b981' : '#f59e0b' }}>{quality.battery.sag_v}V</span>
+                      </div>
+                      {quality.battery.total_discharged_mah != null && (
+                        <div className="flex justify-between">
+                          <span className="text-white/40">Discharged</span>
+                          <span className="font-mono text-white/70">{quality.battery.total_discharged_mah} mAh</span>
+                        </div>
+                      )}
+                      {quality.battery.max_current_a != null && (
+                        <div className="flex justify-between">
+                          <span className="text-white/40">Max Current</span>
+                          <span className="font-mono text-white/70">{quality.battery.max_current_a}A</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {quality.airspeed && (
+                  <div className="bg-white/[0.04] rounded-lg p-3 border border-white/[0.05]">
+                    <div className="text-[9px] font-semibold uppercase tracking-wider text-blue-400/70 mb-2">Airspeed</div>
+                    <div className="space-y-1 text-[10px]">
+                      <div className="flex justify-between">
+                        <span className="text-white/40">Mean</span>
+                        <span className="font-mono text-white/70">{quality.airspeed.mean_ms} m/s</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-white/40">Max</span>
+                        <span className="font-mono text-white/70">{quality.airspeed.max_ms} m/s</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-white/40">Std Dev</span>
+                        <span className="font-mono text-white/70">{quality.airspeed.std_ms} m/s</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {quality.estimator && (
+                  <div className="bg-white/[0.04] rounded-lg p-3 border border-white/[0.05] col-span-2">
+                    <div className="text-[9px] font-semibold uppercase tracking-wider text-purple-400/70 mb-2">Position Accuracy</div>
+                    <div className="flex gap-6 text-[10px]">
+                      {quality.estimator.mean_horiz_accuracy_m != null && (
+                        <div>
+                          <span className="text-white/40">Horizontal: </span>
+                          <span className="font-mono text-white/70">{quality.estimator.mean_horiz_accuracy_m}m</span>
+                        </div>
+                      )}
+                      {quality.estimator.mean_vert_accuracy_m != null && (
+                        <div>
+                          <span className="text-white/40">Vertical: </span>
+                          <span className="font-mono text-white/70">{quality.estimator.mean_vert_accuracy_m}m</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </GlassPanel>
           )}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from gorzen.models.base import ModelOutput, SubsystemModel
+from gorzen.validation.parameter_validator import require_param
 
 
 class ComputeModel(SubsystemModel):
@@ -24,18 +25,19 @@ class ComputeModel(SubsystemModel):
         ]
 
     def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:
-        max_power = params.get("max_power_w", 15.0)
-        throttle_temp = params.get("thermal_throttle_temp_c", 85.0)
-        base_latency = params.get("inference_latency_ms", 30.0)
-        max_fps = params.get("max_throughput_fps", 30.0)
+        max_power = require_param(params, "max_power_w", "ComputeModel")
+        throttle_temp = require_param(params, "thermal_throttle_temp_c", "ComputeModel")
+        base_latency = require_param(params, "inference_latency_ms", "ComputeModel")
+        max_fps = require_param(params, "max_throughput_fps", "ComputeModel")
 
-        ambient_temp = conditions.get("temperature_at_alt_c", 25.0)
+        ambient_temp = require_param(conditions, "temperature_at_alt_c", "ComputeModel")
 
         # Simplified thermal model: junction temp rises with ambient + power dissipation
-        thermal_resistance = 3.0  # degC/W approximate
+        thermal_resistance = 3.0  # HEURISTIC: requires component-specific thermal characterization
         junction_temp = ambient_temp + max_power * thermal_resistance
 
         if junction_temp > throttle_temp:
+            # HEURISTIC: minimum compute performance floor
             throttle_factor = max(0.3, 1.0 - (junction_temp - throttle_temp) / 30.0)
         else:
             throttle_factor = 1.0

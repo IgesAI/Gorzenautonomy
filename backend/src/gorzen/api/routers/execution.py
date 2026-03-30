@@ -2,15 +2,40 @@
 
 from __future__ import annotations
 
+import ipaddress
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from gorzen.services.mavsdk_connection import get_mavsdk_system
+
 router = APIRouter()
 
+_ALLOWED_SCHEMES = {"udp", "tcp", "serial"}
+
+
+def _validate_connection_url(url: str) -> None:
+    """Reject URLs with disallowed schemes or private/loopback IP targets."""
+    parsed = urlparse(url)
+    if parsed.scheme not in _ALLOWED_SCHEMES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported scheme '{parsed.scheme}'. Allowed: {', '.join(sorted(_ALLOWED_SCHEMES))}",
+        )
+    if parsed.hostname:
+        try:
+            addr = ipaddress.ip_address(parsed.hostname)
+            if addr.is_private or addr.is_loopback or addr.is_reserved or addr.is_link_local:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Connection to private/reserved IP addresses is not allowed",
+                )
+        except ValueError:
+            pass
+
 try:
-    from mavsdk import System
     from mavsdk.mission_raw import MissionItem as RawMissionItem
     HAS_MAVSDK = True
 except ImportError:
@@ -68,8 +93,12 @@ async def upload_mission(req: MissionUploadRequest) -> MissionUploadResponse:
             detail="MAVSDK not installed. Install with: pip install mavsdk",
         )
 
-    drone = System()
-    await drone.connect(system_address=req.connection_url)
+    _validate_connection_url(req.connection_url)
+
+    try:
+        drone = await get_mavsdk_system(req.connection_url)
+    except RuntimeError as e:
+        raise HTTPException(status_code=501, detail=str(e)) from e
 
     raw_items = [
         _mavlink_to_raw_item(item, seq)
@@ -86,11 +115,16 @@ async def upload_mission(req: MissionUploadRequest) -> MissionUploadResponse:
 @router.post("/start")
 async def start_mission(connection_url: str = "udp://:14540") -> dict[str, str]:
     """Start the uploaded mission on the connected vehicle."""
+    _validate_connection_url(connection_url)
+
     if not HAS_MAVSDK:
         raise HTTPException(status_code=501, detail="MAVSDK not installed")
 
-    drone = System()
-    await drone.connect(system_address=connection_url)
+    try:
+        drone = await get_mavsdk_system(connection_url)
+    except RuntimeError as e:
+        raise HTTPException(status_code=501, detail=str(e)) from e
+
     await drone.mission_raw.start_mission()
     return {"status": "started", "message": "Mission start commanded"}
 
@@ -98,11 +132,16 @@ async def start_mission(connection_url: str = "udp://:14540") -> dict[str, str]:
 @router.get("/progress", response_model=MissionProgress)
 async def get_mission_progress(connection_url: str = "udp://:14540") -> MissionProgress:
     """Get current mission progress."""
+    _validate_connection_url(connection_url)
+
     if not HAS_MAVSDK:
         raise HTTPException(status_code=501, detail="MAVSDK not installed")
 
-    drone = System()
-    await drone.connect(system_address=connection_url)
+    try:
+        drone = await get_mavsdk_system(connection_url)
+    except RuntimeError as e:
+        raise HTTPException(status_code=501, detail=str(e)) from e
+
     progress = await drone.mission_raw.mission_progress()
     return MissionProgress(
         current=progress.current,

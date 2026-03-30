@@ -1,8 +1,40 @@
+import type { EndurancePreview } from '../types/api';
+import type {
+  CalibrationStatus,
+  CatalogEntry,
+  DroneTransferResponse,
+  LogUploadResponse,
+  MissionAnalysis,
+  ModelChainResponse,
+  NiirsLevel,
+  SolarResponse,
+  TerrainProfileResponse,
+  TerrainResponse,
+  TelemetrySnapshot,
+  TelemetryStatus,
+  TwinSchemaResponse,
+  VehicleTwin,
+  WaypointsResponse,
+  WeatherResponse,
+} from '../types/api';
+import type { EnvelopeRequest, EnvelopeResponse } from '../types/envelope';
+
 const API_BASE = '/api';
 
-async function request<T>(path: string, options?: RequestInit): Promise<T> {
+function authHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {};
+  try {
+    const t = localStorage.getItem('gorzen_token');
+    if (t) headers['Authorization'] = `Bearer ${t}`;
+  } catch {
+    /* ignore */
+  }
+  return headers;
+}
+
+async function request<T = unknown>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...authHeaders(), ...options?.headers },
     ...options,
   });
   if (!res.ok) {
@@ -14,89 +46,185 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   twins: {
-    schema: () => request<any>('/twins/schema'),
-    list: () => request<any[]>('/twins'),
-    get: (id: string) => request<any>(`/twins/${id}`),
-    create: (twin: any) => request<any>('/twins/', { method: 'POST', body: JSON.stringify(twin) }),
-    update: (id: string, twin: any) => request<any>(`/twins/${id}`, { method: 'PUT', body: JSON.stringify(twin) }),
-    delete: (id: string) => request<any>(`/twins/${id}`, { method: 'DELETE' }),
+    schema: () => request<TwinSchemaResponse>('/twins/schema'),
+    list: () => request<VehicleTwin[]>('/twins/'),
+    get: (id: string) => request<VehicleTwin>(`/twins/${encodeURIComponent(id)}`),
+    create: (twin: Partial<VehicleTwin>) =>
+      request<VehicleTwin>('/twins/', { method: 'POST', body: JSON.stringify(twin) }),
+    update: (id: string, twin: Partial<VehicleTwin>) =>
+      request<VehicleTwin>(`/twins/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        body: JSON.stringify(twin),
+      }),
+    delete: (id: string) =>
+      request<{ status: string }>(`/twins/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   },
   envelope: {
-    compute: (twinId: string, params: any) =>
-      request<any>(`/twins/${twinId}/envelope`, { method: 'POST', body: JSON.stringify(params) }),
-    computeDefault: (params: any) =>
-      request<any>('/twins/default/envelope', { method: 'POST', body: JSON.stringify(params) }),
+    compute: (twinId: string, params: Omit<EnvelopeRequest, 'twin_id'>) => {
+      const path =
+        twinId === 'default'
+          ? '/twins/default/envelope'
+          : `/twins/${encodeURIComponent(twinId)}/envelope`;
+      return request<EnvelopeResponse>(path, {
+        method: 'POST',
+        body: JSON.stringify({ ...params, twin_id: twinId }),
+      });
+    },
+    endurancePreview: (twinId: string, speed_ms = 15, altitude_m = 50) =>
+      request<EndurancePreview>(
+        `/twins/${encodeURIComponent(twinId)}/endurance-preview?speed_ms=${speed_ms}&altitude_m=${altitude_m}`,
+      ),
   },
   mission: {
-    plan: (twinId: string, params: any) =>
-      request<any>(`/twins/${twinId}/mission`, { method: 'POST', body: JSON.stringify(params) }),
+    plan: <T extends object>(twinId: string, params: T) =>
+      request<Record<string, unknown>>(`/twins/${encodeURIComponent(twinId)}/mission`, {
+        method: 'POST',
+        body: JSON.stringify(params),
+      }),
   },
   catalog: {
-    list: () => request<any[]>('/catalog/'),
-    byType: (type: string) => request<any[]>(`/catalog/${type}`),
+    list: () => request<CatalogEntry[]>('/catalog/'),
+    byType: (type: string) =>
+      request<CatalogEntry[]>(`/catalog/${encodeURIComponent(type)}`),
   },
   calibration: {
-    status: (twinId: string) => request<any>(`/calibration/${twinId}/status`),
-    missions: () => request<any[]>('/calibration/missions'),
+    status: (twinId: string) =>
+      request<CalibrationStatus>(`/calibration/${encodeURIComponent(twinId)}/status`),
+    missions: () => request<CalibrationStatus[]>('/calibration/missions'),
   },
   environment: {
     solar: (lat: number, lon: number, alt?: number) =>
-      request<any>(`/environment/solar?latitude=${lat}&longitude=${lon}&altitude_m=${alt ?? 0}`),
+      request<SolarResponse>(
+        `/environment/solar?latitude=${lat}&longitude=${lon}&altitude_m=${alt ?? 0}`,
+      ),
     weather: (lat: number, lon: number, elev?: number) =>
-      request<any>(`/environment/weather?latitude=${lat}&longitude=${lon}&elevation_m=${elev ?? 0}`),
+      request<WeatherResponse>(
+        `/environment/weather?latitude=${lat}&longitude=${lon}&elevation_m=${elev ?? 0}`,
+      ),
     terrain: (lat: number, lon: number) =>
-      request<any>(`/environment/terrain?latitude=${lat}&longitude=${lon}`),
+      request<TerrainResponse>(
+        `/environment/terrain?latitude=${lat}&longitude=${lon}`,
+      ),
     terrainProfile: (points: number[][]) =>
-      request<any>('/environment/terrain/profile', { method: 'POST', body: JSON.stringify({ points }) }),
-    niirs: () => request<any>('/environment/niirs'),
-    niirsLevel: (level: number) => request<any>(`/environment/niirs/${level}`),
+      request<TerrainProfileResponse>('/environment/terrain/profile', {
+        method: 'POST',
+        body: JSON.stringify({ points }),
+      }),
+    niirs: () => request<{ levels: NiirsLevel[] }>('/environment/niirs'),
+    niirsLevel: (level: number) =>
+      request<NiirsLevel>(`/environment/niirs/${level}`),
     modelChain: (speed_ms: number, altitude_m: number) =>
-      request<any>('/environment/model-chain', {
+      request<ModelChainResponse>('/environment/model-chain', {
         method: 'POST',
         body: JSON.stringify({ speed_ms, altitude_m }),
       }),
   },
   telemetry: {
     connect: (address: string) =>
-      request<any>('/telemetry/connect', { method: 'POST', body: JSON.stringify({ address }) }),
-    disconnect: () =>
-      request<any>('/telemetry/disconnect', { method: 'POST' }),
-    status: () => request<any>('/telemetry/status'),
-    snapshot: () => request<any>('/telemetry/snapshot'),
-    paramMap: () => request<any>('/telemetry/params/map'),
-    twinToPx4: (params: Record<string, Record<string, any>>) =>
-      request<any>('/telemetry/params/to-px4', { method: 'POST', body: JSON.stringify({ params }) }),
-    px4ToTwin: (params: Record<string, any>) =>
-      request<any>('/telemetry/params/from-px4', { method: 'POST', body: JSON.stringify({ params }) }),
-    logTopics: () => request<any>('/telemetry/logs/topics'),
-    uploadLog: (file: File) => {
+      request<TelemetryStatus>('/telemetry/connect', {
+        method: 'POST',
+        body: JSON.stringify({ address }),
+      }),
+    disconnect: () => request<{ status: string }>('/telemetry/disconnect', { method: 'POST' }),
+    status: () => request<TelemetryStatus>('/telemetry/status'),
+    snapshot: () => request<TelemetrySnapshot>('/telemetry/snapshot'),
+    paramMap: () => request<{ mappings: import('../types/api').ParamMapping[] }>('/telemetry/params/map'),
+    twinToPx4: (params: Record<string, Record<string, unknown>>) =>
+      request<Record<string, unknown>>('/telemetry/params/to-px4', {
+        method: 'POST',
+        body: JSON.stringify({ params }),
+      }),
+    px4ToTwin: (params: Record<string, unknown>) =>
+      request<Record<string, unknown>>('/telemetry/params/from-px4', {
+        method: 'POST',
+        body: JSON.stringify({ params }),
+      }),
+    logTopics: () => request<{ topics: string[] }>('/telemetry/logs/topics'),
+    uploadLog: (file: File): Promise<LogUploadResponse & Record<string, any>> => {
       const form = new FormData();
       form.append('file', file);
-      return fetch(`${API_BASE}/telemetry/logs/upload`, { method: 'POST', body: form })
-        .then(r => { if (!r.ok) throw new Error(`Upload failed: ${r.status}`); return r.json(); });
+      return fetch(`${API_BASE}/telemetry/logs/upload`, {
+        method: 'POST',
+        body: form,
+        headers: authHeaders(),
+      }).then((r) => {
+        if (!r.ok) throw new Error(`Upload failed: ${r.status}`);
+        return r.json();
+      });
     },
-    uploadCalibration: (file: File) => {
+    uploadCalibration: (file: File): Promise<Record<string, any>> => {
       const form = new FormData();
       form.append('file', file);
-      return fetch(`${API_BASE}/telemetry/logs/calibration`, { method: 'POST', body: form })
-        .then(r => { if (!r.ok) throw new Error(`Upload failed: ${r.status}`); return r.json(); });
+      return fetch(`${API_BASE}/telemetry/logs/calibration`, {
+        method: 'POST',
+        body: form,
+        headers: authHeaders(),
+      }).then((r) => {
+        if (!r.ok) throw new Error(`Upload failed: ${r.status}`);
+        return r.json();
+      });
     },
+    analyzeLog: (file: File): Promise<Record<string, any>> => {
+      const form = new FormData();
+      form.append('file', file);
+      return fetch(`${API_BASE}/telemetry/logs/analyze`, {
+        method: 'POST',
+        body: form,
+        headers: authHeaders(),
+      }).then((r) => {
+        if (!r.ok) throw new Error(`Analysis failed: ${r.status}`);
+        return r.json();
+      });
+    },
+    listLogs: () => request<Record<string, any>[]>('/telemetry-logs/'),
+    createCalibrationFromLog: (logId: string, twinId: string) =>
+      request<Record<string, any>>('/telemetry/logs/create-calibration', {
+        method: 'POST',
+        body: JSON.stringify({ log_id: logId, twin_id: twinId }),
+      }),
   },
   missionPlan: {
-    getWaypoints: () => request<any>('/mission-plan/waypoints'),
-    setWaypoints: (waypoints: any[]) =>
-      request<any>('/mission-plan/waypoints', { method: 'POST', body: JSON.stringify({ waypoints }) }),
-    addWaypoint: (wp: any) =>
-      request<any>('/mission-plan/waypoints/add', { method: 'POST', body: JSON.stringify(wp) }),
+    getWaypoints: () => request<WaypointsResponse>('/mission-plan/waypoints'),
+    setWaypoints: (waypoints: Record<string, unknown>[]) =>
+      request<WaypointsResponse>('/mission-plan/waypoints', {
+        method: 'POST',
+        body: JSON.stringify({ waypoints }),
+      }),
+    addWaypoint: (wp: Record<string, unknown>) =>
+      request<WaypointsResponse>('/mission-plan/waypoints/add', {
+        method: 'POST',
+        body: JSON.stringify(wp),
+      }),
     removeWaypoint: (index: number) =>
-      request<any>(`/mission-plan/waypoints/${index}`, { method: 'DELETE' }),
+      request<{ status: string }>(`/mission-plan/waypoints/${index}`, { method: 'DELETE' }),
     clearWaypoints: () =>
-      request<any>('/mission-plan/waypoints', { method: 'DELETE' }),
-    analysis: () => request<any>('/mission-plan/analysis'),
-    geojson: () => request<any>('/mission-plan/geojson'),
+      request<{ status: string }>('/mission-plan/waypoints', { method: 'DELETE' }),
+    analysis: () => request<MissionAnalysis>('/mission-plan/analysis'),
+    geojson: () => request<Record<string, unknown>>('/mission-plan/geojson'),
     uploadToDrone: (address: string = 'udp://:14540') =>
-      request<any>('/mission-plan/upload', { method: 'POST', body: JSON.stringify({ address }) }),
+      request<DroneTransferResponse>('/mission-plan/upload', {
+        method: 'POST',
+        body: JSON.stringify({ address }),
+      }),
     downloadFromDrone: (address: string = 'udp://:14540') =>
-      request<any>('/mission-plan/download', { method: 'POST', body: JSON.stringify({ address }) }),
+      request<DroneTransferResponse>('/mission-plan/download', {
+        method: 'POST',
+        body: JSON.stringify({ address }),
+      }),
+  },
+  auth: {
+    login: (username: string, password: string) => {
+      const form = new URLSearchParams();
+      form.set('username', username);
+      form.set('password', password);
+      return fetch(`${API_BASE}/auth/token`, {
+        method: 'POST',
+        body: form,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      }).then((r) => {
+        if (!r.ok) throw new Error(`Login failed: ${r.status}`);
+        return r.json() as Promise<{ access_token: string; token_type: string }>;
+      });
+    },
   },
 };

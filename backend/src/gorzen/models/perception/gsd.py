@@ -1,14 +1,21 @@
 """GSD computation, altitude band, pixels-on-target, standoff distance.
 
-ODM-aligned formula: GSD = (sensor_width × altitude) / (focal_length × image_width) [cm/px]
-See gorzen.photogrammetry.gsd.calculate_gsd_odm for ODM reference implementation.
+ODM-aligned formula: GSD = (sensor_width x altitude) / (focal_length x image_width) [cm/px]
+
+All sensor parameters are REQUIRED — no silent fallback defaults.
+If a parameter is missing, evaluate() raises ValueError (INSUFFICIENT_DATA).
 """
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 
 from gorzen.models.base import ModelOutput, SubsystemModel
+from gorzen.validation.parameter_validator import require_param
+
+logger = logging.getLogger(__name__)
 
 
 class GSDModel(SubsystemModel):
@@ -34,14 +41,19 @@ class GSDModel(SubsystemModel):
         ]
 
     def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:
-        sw_mm = params.get("sensor_width_mm", 13.2)
-        sh_mm = params.get("sensor_height_mm", 8.8)
-        fl_mm = params.get("focal_length_mm", 24.0)
-        px_w = params.get("pixel_width", 4000)
-        px_h = params.get("pixel_height", 3000)
+        sw_mm = require_param(params, "sensor_width_mm", "GSDModel")
+        sh_mm = require_param(params, "sensor_height_mm", "GSDModel")
+        fl_mm = require_param(params, "focal_length_mm", "GSDModel")
+        px_w = require_param(params, "pixel_width", "GSDModel")
+        px_h = require_param(params, "pixel_height", "GSDModel")
 
-        alt = conditions.get("altitude_m", 50.0)
-        target_size_m = conditions.get("target_size_m", 1.0)
+        alt = require_param(conditions, "altitude_m", "GSDModel")
+        target_size_m = conditions.get("target_size_m", None)
+        if target_size_m is None:
+            target_size_m = params.get("target_size_m", None)
+        if target_size_m is None:
+            logger.warning("GSDModel: target_size_m not provided — pixels_on_target will be 0")
+            target_size_m = 0.0
 
         # GSD along width and height dimensions
         gsd_w_m = (sw_mm * alt) / (fl_mm * px_w)  # meters/pixel
@@ -106,8 +118,10 @@ def compute_altitude_band(
     h_max_gsd = (max_gsd_cm / 100.0) / gsd_scale if gsd_scale > 0 else 999.0
     h_min_gsd = (min_gsd_cm / 100.0) / gsd_scale if gsd_scale > 0 else 1.0
 
-    # Max altitude from POT constraint
-    h_max_pot = target_size_m * focal_length_mm * pixel_width / (sensor_width_mm * min_pixels_on_target) if min_pixels_on_target > 0 else 999.0
+    # Max altitude from POT constraint — use worst-case axis (same as GSD)
+    # POT = target_size_m / gsd_m = target_size_m / (gsd_scale * altitude)
+    # Require POT >= min_pixels_on_target → altitude <= target_size_m / (gsd_scale * min_pot)
+    h_max_pot = target_size_m / (gsd_scale * min_pixels_on_target) if (min_pixels_on_target > 0 and gsd_scale > 0) else 999.0
 
     h_max = min(h_max_gsd, h_max_pot)
     h_min = max(h_min_gsd, 2.0)
@@ -129,5 +143,5 @@ def compute_standoff_distance(
     """
     gsd_m = required_gsd_cm / 100.0
     slant_range = gsd_m * focal_length_mm * pixel_width / (sensor_width_mm + 1e-9)
-    standoff = max(slant_range * np.cos(np.radians(90 - gimbal_max_pitch_deg)), safety_clearance_m)
+    standoff = max(slant_range * np.cos(np.radians(gimbal_max_pitch_deg)), safety_clearance_m)
     return standoff

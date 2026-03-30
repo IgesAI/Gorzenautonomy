@@ -89,6 +89,15 @@ class ParameterConstraints(BaseModel):
     )
 
 
+class ParameterClassification(str, Enum):
+    """How a parameter may be sourced and whether it can be defaulted."""
+
+    DATASHEET_LOCKED = "datasheet_locked"
+    OPERATOR_INPUT_REQUIRED = "operator_input_required"
+    DERIVED_ONLY = "derived_only"
+    STANDARDS_CONSTANT = "standards_constant"
+
+
 class TypedParameter(BaseModel, Generic[T]):
     """Universal parameter container with full metadata."""
 
@@ -98,6 +107,7 @@ class TypedParameter(BaseModel, Generic[T]):
     units: str = Field(..., description="UCUM-compatible unit string")
     default_value: Any | None = None
     default_source: Provenance | None = None
+    classification: ParameterClassification = ParameterClassification.DATASHEET_LOCKED
     uncertainty: UncertaintySpec | None = None
     constraints: ParameterConstraints | None = None
     provenance: Provenance | None = None
@@ -116,6 +126,7 @@ def param(
     units: str,
     *,
     source: ProvenanceSource = ProvenanceSource.MANUFACTURER,
+    classification: ParameterClassification = ParameterClassification.DATASHEET_LOCKED,
     uncertainty: UncertaintySpec | None = None,
     min_value: float | None = None,
     max_value: float | None = None,
@@ -135,6 +146,7 @@ def param(
         units=units,
         default_value=value,
         default_source=Provenance(source=source),
+        classification=classification,
         uncertainty=uncertainty,
         constraints=constraints,
         model_binding=binding,

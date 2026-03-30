@@ -6,8 +6,32 @@ Enables syncing twin configuration with real drone config.
 
 from __future__ import annotations
 
+import ast
+import operator
 from dataclasses import dataclass
 from typing import Any
+
+
+def _safe_eval(expr: str) -> float:
+    """Evaluate simple arithmetic expressions safely."""
+    node = ast.parse(expr, mode='eval').body
+    _ops = {
+        ast.Add: operator.add,
+        ast.Sub: operator.sub,
+        ast.Mult: operator.mul,
+        ast.Div: operator.truediv,
+    }
+
+    def _eval(n: ast.expr) -> float:
+        if isinstance(n, ast.Constant):
+            return float(n.value)
+        if isinstance(n, ast.BinOp) and type(n.op) in _ops:
+            return _ops[type(n.op)](_eval(n.left), _eval(n.right))
+        if isinstance(n, ast.UnaryOp) and isinstance(n.op, ast.USub):
+            return -_eval(n.operand)
+        raise ValueError(f"Unsupported expression: {ast.dump(n)}")
+
+    return _eval(node)
 
 
 @dataclass
@@ -140,7 +164,7 @@ PX4_PARAM_MAP: list[ParamMapping] = [
     # --- Geofence / Safety ---
     ParamMapping(
         twin_subsystem="airframe", twin_param="service_ceiling_ft",
-        px4_param="GF_MAX_HOR_DIST", px4_description="Geofence max altitude (approx)",
+        px4_param="GF_MAX_VER_DIST", px4_description="Geofence max vertical distance",
         transform_to_px4="{v} * 0.3048", transform_from_px4="{v} / 0.3048",
         px4_group="Geofence", px4_unit="m",
     ),
@@ -186,7 +210,7 @@ def twin_to_px4(twin_params: dict[str, dict[str, Any]]) -> dict[str, Any]:
         expr = m.transform_to_px4.replace("{v}", str(float(val)))
         expr = expr.replace("{cell_count_s}", str(float(cell_count_s)))
         try:
-            px4_val = eval(expr)  # noqa: S307 — trusted internal expressions
+            px4_val = _safe_eval(expr)
             if m.px4_type == "int32":
                 px4_val = int(round(px4_val))
             result[m.px4_param] = px4_val
@@ -219,7 +243,7 @@ def px4_to_twin(px4_params: dict[str, Any]) -> dict[str, dict[str, Any]]:
         expr = m.transform_from_px4.replace("{v}", str(float(val)))
         expr = expr.replace("{cell_count_s}", str(float(cell_count_s)))
         try:
-            twin_val = eval(expr)  # noqa: S307 — trusted internal expressions
+            twin_val = _safe_eval(expr)
             if m.twin_subsystem not in result:
                 result[m.twin_subsystem] = {}
             result[m.twin_subsystem][m.twin_param] = twin_val

@@ -9,6 +9,7 @@ from __future__ import annotations
 import numpy as np
 
 from gorzen.models.base import ModelOutput, SubsystemModel
+from gorzen.validation.parameter_validator import require_param
 
 
 class RollingShutterModel(SubsystemModel):
@@ -31,16 +32,21 @@ class RollingShutterModel(SubsystemModel):
         ]
 
     def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:
-        shutter = str(params.get("shutter_type", "rolling"))
-        readout_ms = params.get("readout_time_ms", 30.0)
-        px_h = params.get("pixel_height", 3000)
-        sh_mm = params.get("sensor_height_mm", 8.8)
-        fl_mm = params.get("focal_length_mm", 24.0)
+        if "shutter_type" not in params or params["shutter_type"] is None:
+            raise ValueError(
+                "INSUFFICIENT_DATA: 'shutter_type' is required but missing"
+                " (context: RollingShutterModel)"
+            )
+        shutter = str(params["shutter_type"])
+        readout_ms = require_param(params, "readout_time_ms", "RollingShutterModel")
+        px_h = require_param(params, "pixel_height", "RollingShutterModel")
+        sh_mm = require_param(params, "sensor_height_mm", "RollingShutterModel")
+        fl_mm = require_param(params, "focal_length_mm", "RollingShutterModel")
 
-        v_ground = conditions.get("airspeed_ms", 10.0)
-        gsd_m = conditions.get("gsd_cm_px", 1.0) / 100.0
-        angular_rate_dps = conditions.get("angular_rate_dps", 5.0)
-        max_blur = conditions.get("max_blur_px", 0.5)
+        v_ground = require_param(conditions, "airspeed_ms", "RollingShutterModel")
+        gsd_m = require_param(conditions, "gsd_cm_px", "RollingShutterModel") / 100.0
+        angular_rate_dps = require_param(conditions, "angular_rate_dps", "RollingShutterModel")
+        max_blur = require_param(conditions, "max_blur_px", "RollingShutterModel")
 
         if shutter == "global" or readout_ms <= 0:
             return ModelOutput(
@@ -72,7 +78,8 @@ class RollingShutterModel(SubsystemModel):
 
         # Risk score: 0 = no risk, 1 = exceeds budget by 2x+
         risk = min(total / (max_blur + 1e-6), 2.0) / 2.0
-        feasible = total <= max_blur * 2.0  # RS budget is typically 2x motion blur budget
+        # HEURISTIC: RS budget is typically 2x motion blur budget
+        feasible = total <= max_blur * 2.0
 
         return ModelOutput(
             values={

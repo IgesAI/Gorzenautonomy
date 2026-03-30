@@ -1,11 +1,13 @@
-"""Mission planner with MAVLink mission item export and gimbal protocol."""
+"""Mission planner with MAVLink mission item export, terrain-following, and gimbal protocol."""
 
 from __future__ import annotations
 
+import asyncio
 import math
 
 from gorzen.solver.coverage import (
     generate_coverage_waypoints_drone_flightplan,
+    generate_polygon_clipped_lawnmower,
     optimize_waypoint_order_ortools,
 )
 from gorzen.schemas.mission import (
@@ -19,7 +21,7 @@ from gorzen.schemas.mission import (
 )
 from gorzen.schemas.twin_graph import VehicleTwin
 from gorzen.solver.envelope_solver import _extract_params
-from gorzen.solver.trajectory import TrajectoryOptimizer
+from gorzen.solver.trajectory import TrajectoryOptimizer, make_power_model_from_params
 
 
 def generate_survey_waypoints(
@@ -119,20 +121,27 @@ def plan_mission(
                 order = optimize_waypoint_order_ortools(wp_coords, depot=wp_coords[0])
                 wp_coords = [wp_coords[i] for i in order]
         else:
-            wp_coords = generate_survey_waypoints(
+            clipped_wp = generate_polygon_clipped_lawnmower(
                 request.area_of_interest, alt, gsd_params,
                 request.overlap_pct, request.sidelap_pct,
             )
+            if clipped_wp:
+                wp_coords = [(p[0], p[1]) for p in clipped_wp]
+            else:
+                wp_coords = generate_survey_waypoints(
+                    request.area_of_interest, alt, gsd_params,
+                    request.overlap_pct, request.sidelap_pct,
+                )
     else:
         wp_coords = [(0.0, 0.0), (0.001, 0.0), (0.001, 0.001), (0.0, 0.001)]
 
     # Optimize trajectory
-    optimizer = TrajectoryOptimizer(gsd_params=gsd_params)
+    power_fn = make_power_model_from_params(params)
+    optimizer = TrajectoryOptimizer(power_model_fn=power_fn, gsd_params=gsd_params)
     # Energy budget: use fuel endurance for ICE, or battery for pure-electric
     tank_kg = params.get("tank_capacity_kg", 15.0)
     fuel_reserve = params.get("fuel_reserve_pct", 15.0) / 100.0
     bsfc = params.get("bsfc_cruise_g_kwh", 500.0)
-    params.get("max_power_kw", 2.2)
     usable_fuel_g = tank_kg * 1000.0 * (1.0 - fuel_reserve)
     energy_budget = usable_fuel_g / (bsfc + 1e-6)  # kW-hr available
 
@@ -220,6 +229,38 @@ def plan_mission(
         envelope_summary=envelope_summary,
         warnings=warnings,
     )
+
+
+async def plan_mission_with_terrain(
+    twin: VehicleTwin,
+    request: MissionPlanRequest,
+) -> MissionPlanResponse:
+    """Generate mission plan with terrain-following altitude profile.
+
+    Fetches terrain elevation for each waypoint and adjusts the flight
+    altitude to maintain consistent AGL clearance.
+    """
+    try:
+        from gorzen.services.terrain import fetch_elevation_batch
+    except ImportError:
+        return plan_mission(twin, request)
+
+    response = plan_mission(twin, request)
+
+    if response.plan.waypoints:
+        points = [(wp.latitude_deg, wp.longitude_deg) for wp in response.plan.waypoints]
+        try:
+            terrain_points = await fetch_elevation_batch(points)
+            for wp, tp in zip(response.plan.waypoints, terrain_points):
+                wp.altitude_m = wp.altitude_m + tp.elevation_m
+            response.envelope_summary["terrain_aware"] = 1.0
+            response.envelope_summary["max_terrain_elevation_m"] = float(
+                max(tp.elevation_m for tp in terrain_points)
+            )
+        except Exception:
+            response.warnings.append("Terrain fetch failed; using flat-earth altitude")
+
+    return response
 
 
 def _build_mavlink_items(

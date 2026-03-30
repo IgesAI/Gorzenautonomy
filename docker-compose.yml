@@ -1,0 +1,55 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: gorzen
+      POSTGRES_PASSWORD: gorzen
+      POSTGRES_DB: gorzen
+    ports:
+      - "5432:5432"
+    volumes:
+      - gorzen_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gorzen -d gorzen"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      GORZEN_DATABASE_URL: postgresql+asyncpg://gorzen:gorzen@db:5432/gorzen
+      GORZEN_RUN_MIGRATIONS_ON_STARTUP: "true"
+      GORZEN_CORS_ORIGINS: '["http://localhost:5173","http://localhost:3000"]'
+      GORZEN_OBJECT_STORE_PATH: /app/storage/logs
+      GORZEN_EVENT_STORE_PATH: /app/storage/events
+    volumes:
+      - gorzen_storage:/app/storage
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      # Vite dev server proxy (Node resolves service name `api`)
+      API_PROXY_TARGET: http://api:8000
+    depends_on:
+      - api
+    profiles:
+      - frontend
+
+volumes:
+  gorzen_pgdata:
+  gorzen_storage:

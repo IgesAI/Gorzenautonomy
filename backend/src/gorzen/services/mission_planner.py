@@ -14,7 +14,6 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 try:
-    from mavsdk import System
     from mavsdk.mission import MissionItem, MissionPlan
 
     MAVSDK_AVAILABLE = True
@@ -198,8 +197,9 @@ class MissionService:
             return {"success": False, "error": "No waypoints in mission"}
 
         try:
-            drone = System()
-            await drone.connect(system_address=system_address)
+            from gorzen.services.mavsdk_connection import get_mavsdk_system
+
+            drone = await get_mavsdk_system(system_address)
 
             items = []
             for wp in self._waypoints:
@@ -231,8 +231,9 @@ class MissionService:
             return {"success": False, "error": "MAVSDK not installed"}
 
         try:
-            drone = System()
-            await drone.connect(system_address=system_address)
+            from gorzen.services.mavsdk_connection import get_mavsdk_system
+
+            drone = await get_mavsdk_system(system_address)
 
             plan = await drone.mission.download_mission()
 
@@ -256,6 +257,58 @@ class MissionService:
             }
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+
+def waypoints_to_json(waypoints: list[Waypoint]) -> list[dict[str, Any]]:
+    """Serialize waypoints for JSON/DB storage."""
+    out: list[dict[str, Any]] = []
+    for w in waypoints:
+        yaw = w.yaw_deg
+        if isinstance(yaw, float) and math.isnan(yaw):
+            yaw_val: float | None = None
+        else:
+            yaw_val = yaw
+        out.append({
+            "latitude_deg": w.latitude_deg,
+            "longitude_deg": w.longitude_deg,
+            "altitude_m": w.altitude_m,
+            "speed_ms": w.speed_ms,
+            "loiter_time_s": w.loiter_time_s,
+            "acceptance_radius_m": w.acceptance_radius_m,
+            "camera_action": w.camera_action,
+            "gimbal_pitch_deg": w.gimbal_pitch_deg,
+            "yaw_deg": yaw_val,
+            "is_fly_through": w.is_fly_through,
+            "order": w.order,
+        })
+    return out
+
+
+def waypoints_from_json(data: list[dict[str, Any]]) -> list[Waypoint]:
+    """Restore waypoints from persisted JSON."""
+    wps: list[Waypoint] = []
+    for d in data:
+        raw_yaw = d.get("yaw_deg")
+        if raw_yaw is None:
+            yaw = float("nan")
+        else:
+            yaw = float(raw_yaw)
+        wps.append(
+            Waypoint(
+                latitude_deg=float(d["latitude_deg"]),
+                longitude_deg=float(d["longitude_deg"]),
+                altitude_m=float(d["altitude_m"]),
+                speed_ms=float(d.get("speed_ms", 15.0)),
+                loiter_time_s=float(d.get("loiter_time_s", 0.0)),
+                acceptance_radius_m=float(d.get("acceptance_radius_m", 5.0)),
+                camera_action=str(d.get("camera_action", "none")),
+                gimbal_pitch_deg=float(d.get("gimbal_pitch_deg", -90.0)),
+                yaw_deg=yaw,
+                is_fly_through=bool(d.get("is_fly_through", True)),
+                order=int(d.get("order", len(wps))),
+            )
+        )
+    return wps
 
 
 # Singleton

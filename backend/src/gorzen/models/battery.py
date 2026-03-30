@@ -8,6 +8,7 @@ from __future__ import annotations
 import numpy as np
 
 from gorzen.models.base import ModelOutput, SubsystemModel
+from gorzen.validation.parameter_validator import require_param
 
 
 def lipo_ocv(soc: float) -> float:
@@ -59,18 +60,18 @@ class BatteryModel(SubsystemModel):
         ]
 
     def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:
-        n_s = int(params.get("cell_count_s", 6))
-        n_p = int(params.get("cell_count_p", 1))
-        cap_ah = params.get("capacity_ah", 10.0)
-        r0_mohm = params.get("internal_resistance_mohm", 15.0)
-        soh = params.get("soh_pct", 100.0) / 100.0
-        wiring_mohm = params.get("wiring_loss_mohm", 5.0)
-        reserve_pct = params.get("reserve_policy_pct", 20.0)
-        r1_mohm = params.get("r1_mohm", 5.0)
+        n_s = int(require_param(params, "cell_count_s", "BatteryModel"))
+        n_p = int(require_param(params, "cell_count_p", "BatteryModel"))
+        cap_ah = require_param(params, "capacity_ah", "BatteryModel")
+        r0_mohm = require_param(params, "internal_resistance_mohm", "BatteryModel")
+        soh = require_param(params, "soh_pct", "BatteryModel") / 100.0
+        wiring_mohm = require_param(params, "wiring_loss_mohm", "BatteryModel")
+        reserve_pct = require_param(params, "reserve_policy_pct", "BatteryModel")
+        r1_mohm = require_param(params, "r1_mohm", "BatteryModel")
 
-        soc = conditions.get("soc", 0.9)
-        I_draw = conditions.get("total_electrical_power_W", 200.0)
-        temp_c = conditions.get("temperature_c", 25.0)
+        soc = require_param(conditions, "soc", "BatteryModel")
+        I_draw = require_param(conditions, "total_electrical_power_W", "BatteryModel")
+        temp_c = require_param(conditions, "temperature_c", "BatteryModel")
 
         effective_cap = cap_ah * soh * n_p
 
@@ -94,19 +95,28 @@ class BatteryModel(SubsystemModel):
 
         terminal_v = ocv_pack - total_sag
 
+        warnings: list[str] = []
+
         usable_soc = max(soc - reserve_pct / 100.0, 0.0)
         energy_remaining = usable_soc * effective_cap * ocv_pack  # Wh
-        # I_draw is total_electrical_power_W; endurance = energy_Wh / power_W * 60 min/hr
-        endurance_min = (energy_remaining / (I_draw + 1e-9)) * 60.0 if I_draw > 1.0 else 999.0
+        if I_draw > 1.0:
+            endurance_min = (energy_remaining / (I_draw + 1e-9)) * 60.0
+        else:
+            endurance_min = 0.0
+            warnings.append("power_draw_W <= 1.0; endurance cannot be computed")
 
         reserve_energy = (reserve_pct / 100.0) * effective_cap * ocv_pack  # Wh
-        reserve_time = (reserve_energy / (I_draw + 1e-9)) * 60.0 if I_draw > 1.0 else 999.0
+        if I_draw > 1.0:
+            reserve_time = (reserve_energy / (I_draw + 1e-9)) * 60.0
+        else:
+            reserve_time = 0.0
+            warnings.append("power_draw_W <= 1.0; reserve time cannot be computed")
 
         # Min voltage check (3.3V/cell under load)
         min_cell_v = 3.3
         feasible = terminal_v >= (min_cell_v * n_s) and soc > 0.05
 
-        return ModelOutput(
+        out = ModelOutput(
             values={
                 "pack_voltage_V": ocv_pack,
                 "terminal_voltage_V": terminal_v,
@@ -127,6 +137,8 @@ class BatteryModel(SubsystemModel):
             },
             feasible=feasible,
         )
+        out.warnings.extend(warnings)
+        return out
 
 
 class BatteryAgingModel:
@@ -165,10 +177,19 @@ class BatteryUKF:
     Measurement: terminal voltage
     """
 
-    def __init__(self, n_s: int = 6, capacity_ah: float = 10.0, r0_ohm: float = 0.015):
+    def __init__(
+        self,
+        n_s: int,
+        capacity_ah: float,
+        r0_ohm: float,
+        r1_ohm: float,
+        c1_f: float,
+    ):
         self.n_s = n_s
         self.capacity_ah = capacity_ah
         self.r0 = r0_ohm
+        self.r1 = r1_ohm
+        self.c1 = c1_f
         self.x = np.array([0.9, 0.0])  # [SoC, V_rc1]
         self.P = np.diag([0.01, 0.001])
         self.Q = np.diag([1e-5, 1e-4])
@@ -177,8 +198,7 @@ class BatteryUKF:
     def predict(self, current_A: float, dt_s: float) -> None:
         soc, v_rc = self.x
         dsoc = -current_A * dt_s / (self.capacity_ah * 3600.0)
-        r1, c1 = 0.005, 500.0
-        dv_rc = -v_rc / (r1 * c1) + current_A / c1
+        dv_rc = -v_rc / (self.r1 * self.c1) + current_A / self.c1
         self.x = np.array([soc + dsoc, v_rc + dv_rc * dt_s])
         self.P = self.P + self.Q
 
@@ -189,7 +209,7 @@ class BatteryUKF:
         y = measured_voltage - predicted_v
         # Linearized dOCV/dSoC from 5th-order polynomial
         docv = 2.035 - 10.65 * soc + 38.22 * soc ** 2 - 51.52 * soc ** 3 + 23.15 * soc ** 4
-        H = np.array([[-self.n_s * docv, -1.0]])
+        H = np.array([[self.n_s * docv, -1.0]])
         S = H @ self.P @ H.T + self.R_meas
         K = self.P @ H.T / (S[0, 0] + 1e-12)
         self.x = self.x + (K @ np.array([[y]])).flatten()

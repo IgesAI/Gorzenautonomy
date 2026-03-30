@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 import numpy as np
+import scipy.linalg
 from scipy.optimize import minimize
 
 
@@ -66,9 +67,13 @@ class GPDiscrepancy:
 
         K = self._kernel_matrix(X, X) + self.noise_variance * np.eye(len(X))
         try:
-            self.alpha = np.linalg.solve(K, y)
+            self._L = np.linalg.cholesky(K)
+            self._alpha = scipy.linalg.cho_solve((self._L, True), y)
+            self.alpha = self._alpha
         except np.linalg.LinAlgError:
             self.alpha = np.linalg.lstsq(K, y, rcond=None)[0]
+            self._L = None
+            self._alpha = self.alpha
 
     def predict(self, X_new: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Predict mean and variance at new input points."""
@@ -76,16 +81,20 @@ class GPDiscrepancy:
             return np.zeros(X_new.shape[0]), np.ones(X_new.shape[0]) * self.signal_variance
 
         k_star = self._kernel_matrix(X_new, self.X_train)
-        mean = k_star @ self.alpha
-
-        K = self._kernel_matrix(self.X_train, self.X_train) + self.noise_variance * np.eye(len(self.X_train))
         k_ss = np.array([self._kernel(X_new[i], X_new[i]) for i in range(len(X_new))])
 
-        try:
-            K_inv = np.linalg.inv(K)
-            var = k_ss - np.sum((k_star @ K_inv) * k_star, axis=1)
-        except np.linalg.LinAlgError:
-            var = np.ones(len(X_new)) * self.signal_variance
+        if self._L is not None:
+            v = scipy.linalg.solve_triangular(self._L, k_star.T, lower=True)
+            mean = k_star @ self._alpha
+            var = k_ss - np.sum(v.T * v.T, axis=1)
+        else:
+            mean = k_star @ self._alpha
+            try:
+                K = self._kernel_matrix(self.X_train, self.X_train) + self.noise_variance * np.eye(len(self.X_train))
+                K_inv = np.linalg.inv(K)
+                var = k_ss - np.sum((k_star @ K_inv) * k_star, axis=1)
+            except np.linalg.LinAlgError:
+                var = np.ones(len(X_new)) * self.signal_variance
 
         var = np.maximum(var, 1e-8)
         return mean, var
@@ -191,7 +200,9 @@ class BayesianCalibrator:
         try:
             cov = np.linalg.inv(H + np.eye(n_params) * 1e-6)
             cov = (cov + cov.T) / 2
-            cov = np.maximum(cov, np.eye(n_params) * 1e-8)
+            min_eig = np.min(np.linalg.eigvalsh(cov))
+            if min_eig < 1e-8:
+                cov += np.eye(n_params) * (1e-8 - min_eig)
         except np.linalg.LinAlgError:
             cov = np.eye(n_params) * 0.01
 

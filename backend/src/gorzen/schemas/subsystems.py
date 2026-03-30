@@ -11,7 +11,7 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
-from gorzen.schemas.parameter import TypedParameter, UncertaintySpec, param
+from gorzen.schemas.parameter import ParameterClassification, TypedParameter, UncertaintySpec, param
 
 
 # ---------------------------------------------------------------------------
@@ -387,16 +387,26 @@ class EnvironmentConfig(BaseModel):
 
 
 class MissionConstraints(BaseModel):
-    """Operator-specified mission constraints."""
+    """Operator-specified mission constraints.
 
-    min_gsd_cm_px: TypedParameter = param(2.0, "cm/px", min_value=0.1, max_value=50, step=0.1, precision=1, group="perception", display_name="Min GSD")
-    max_blur_px: TypedParameter = param(0.5, "px", min_value=0.1, max_value=5, step=0.1, precision=1, group="perception", display_name="Max Blur")
-    min_identification_confidence: TypedParameter = param(0.8, "1", min_value=0.0, max_value=1.0, step=0.01, precision=2, group="perception", display_name="Min ID Confidence")
-    fuel_reserve_pct: TypedParameter = param(15.0, "%", min_value=5, max_value=40, step=1.0, precision=0, group="energy", display_name="Fuel Reserve")
-    battery_reserve_pct: TypedParameter = param(20.0, "%", min_value=5, max_value=50, step=1.0, precision=0, group="energy", display_name="Battery Reserve")
-    min_overlap_pct: TypedParameter = param(70.0, "%", min_value=0, max_value=95, step=1.0, precision=0, group="mapping", display_name="Min Image Overlap")
-    max_mission_duration_hr: TypedParameter = param(8.0, "hr", min_value=0.1, max_value=48, step=0.5, precision=1, group="general", display_name="Max Duration")
-    max_range_nmi: TypedParameter = param(300.0, "nmi", min_value=1, max_value=2000, step=10.0, precision=0, group="general", display_name="Max Range")
+    All fields are classified as OPERATOR_INPUT_REQUIRED — they must be
+    explicitly set for each mission, not silently defaulted.
+    """
+
+    _OIR = ParameterClassification.OPERATOR_INPUT_REQUIRED
+
+    min_gsd_cm_px: TypedParameter = param(2.0, "cm/px", classification=_OIR, min_value=0.1, max_value=50, step=0.1, precision=1, group="perception", display_name="Min GSD")
+    target_feature_mm: TypedParameter = param(5.0, "mm", classification=_OIR, min_value=0.1, max_value=1000, step=0.1, precision=1, group="perception", display_name="Target Feature Size")
+    max_blur_px: TypedParameter = param(0.5, "px", classification=_OIR, min_value=0.1, max_value=5, step=0.1, precision=1, group="perception", display_name="Max Blur")
+    exposure_time_s: TypedParameter = param(0.001, "s", classification=_OIR, min_value=0.00001, max_value=1.0, step=0.0001, precision=4, group="perception", display_name="Exposure Time")
+    vibration_blur_px: TypedParameter = param(0.1, "px", classification=_OIR, min_value=0.0, max_value=2.0, step=0.01, precision=2, group="perception", display_name="Vibration Blur")
+    min_pixels_on_target: TypedParameter = param(10.0, "px", classification=_OIR, min_value=1, max_value=200, step=1.0, precision=0, group="perception", display_name="Min Pixels on Target")
+    min_identification_confidence: TypedParameter = param(0.8, "1", classification=_OIR, min_value=0.0, max_value=1.0, step=0.01, precision=2, group="perception", display_name="Min ID Confidence")
+    fuel_reserve_pct: TypedParameter = param(15.0, "%", classification=_OIR, min_value=5, max_value=40, step=1.0, precision=0, group="energy", display_name="Fuel Reserve")
+    battery_reserve_pct: TypedParameter = param(20.0, "%", classification=_OIR, min_value=5, max_value=50, step=1.0, precision=0, group="energy", display_name="Battery Reserve")
+    min_overlap_pct: TypedParameter = param(70.0, "%", classification=_OIR, min_value=0, max_value=95, step=1.0, precision=0, group="mapping", display_name="Min Image Overlap")
+    max_mission_duration_hr: TypedParameter = param(8.0, "hr", classification=_OIR, min_value=0.1, max_value=48, step=0.5, precision=1, group="general", display_name="Max Duration")
+    max_range_nmi: TypedParameter = param(300.0, "nmi", classification=_OIR, min_value=1, max_value=2000, step=10.0, precision=0, group="general", display_name="Max Range")
 
 
 class MissionProfileConfig(BaseModel):

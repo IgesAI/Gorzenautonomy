@@ -8,6 +8,7 @@ from __future__ import annotations
 
 
 from gorzen.models.base import ModelOutput, SubsystemModel
+from gorzen.validation.parameter_validator import require_param
 
 
 # Fuel density reference values (kg/L at 15C)
@@ -52,18 +53,23 @@ class FuelSystemModel(SubsystemModel):
         ]
 
     def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:
-        fuel_type = str(params.get("fuel_type", "jp5"))
-        density = params.get("fuel_density_kg_l", FUEL_DENSITIES.get(fuel_type, 0.81))
-        tank_l = params.get("tank_capacity_l", 18.5)
-        tank_kg = params.get("tank_capacity_kg", tank_l * density)
-        usable_frac = params.get("usable_fuel_pct", 95.0) / 100.0
-        reserve_pct = params.get("fuel_reserve_pct", 15.0) / 100.0
+        if "fuel_type" not in params or params["fuel_type"] is None:
+            raise ValueError(
+                "INSUFFICIENT_DATA: 'fuel_type' is required but missing"
+                " (context: FuelSystemModel)"
+            )
+        fuel_type = str(params["fuel_type"])
+        density = require_param(params, "fuel_density_kg_l", "FuelSystemModel")
+        tank_l = require_param(params, "tank_capacity_l", "FuelSystemModel")
+        tank_kg = require_param(params, "tank_capacity_kg", "FuelSystemModel")
+        usable_frac = require_param(params, "usable_fuel_pct", "FuelSystemModel") / 100.0
+        reserve_pct = require_param(params, "fuel_reserve_pct", "FuelSystemModel") / 100.0
 
-        fuel_flow_g_hr = conditions.get("fuel_flow_rate_g_hr", 1000.0)
-        elapsed_hr = conditions.get("mission_elapsed_hr", 0.0)
-        cruise_speed_kts = conditions.get("cruise_speed_kts", 42.0)
-        mass_empty = conditions.get("mass_empty_kg", 34.0)
-        payload_mass = conditions.get("payload_mass_kg", 5.0)
+        fuel_flow_g_hr = require_param(conditions, "fuel_flow_rate_g_hr", "FuelSystemModel")
+        elapsed_hr = require_param(conditions, "mission_elapsed_hr", "FuelSystemModel")
+        cruise_speed_kts = require_param(conditions, "cruise_speed_kts", "FuelSystemModel")
+        mass_empty = require_param(conditions, "mass_empty_kg", "FuelSystemModel")
+        payload_mass = require_param(conditions, "payload_mass_kg", "FuelSystemModel")
 
         # Fuel burned so far
         fuel_burned_kg = fuel_flow_g_hr * elapsed_hr / 1000.0
@@ -76,11 +82,14 @@ class FuelSystemModel(SubsystemModel):
         reserve_kg = tank_kg * reserve_pct
         usable_remaining = max(min(fuel_remaining_kg, max_usable_kg) - reserve_kg, 0.0)
 
+        warnings: list[str] = []
+
         # Endurance from remaining fuel
         if fuel_flow_g_hr > 0:
             endurance_hr = (usable_remaining * 1000.0) / fuel_flow_g_hr
         else:
-            endurance_hr = 999.0
+            endurance_hr = 0.0
+            warnings.append("fuel_flow_rate_g_hr is zero; endurance cannot be computed")
 
         # Range from remaining fuel
         fuel_range_nmi = endurance_hr * cruise_speed_kts
@@ -90,6 +99,8 @@ class FuelSystemModel(SubsystemModel):
         weight_reduction = fuel_burned_kg
 
         feasible = fuel_remaining_kg > reserve_kg
+        if not feasible:
+            warnings.append("Fuel remaining below reserve threshold")
 
         out = ModelOutput(
             values={
@@ -114,8 +125,7 @@ class FuelSystemModel(SubsystemModel):
             },
             feasible=feasible,
         )
-        if not feasible:
-            out.warnings.append("Fuel remaining below reserve threshold")
+        out.warnings.extend(warnings)
         return out
 
 
@@ -145,15 +155,15 @@ class GeneratorModel(SubsystemModel):
         ]
 
     def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:
-        gen_cont = params.get("generator_output_w", 200.0)
-        gen_int = params.get("generator_output_intermittent_w", 400.0)
-        charge_rate = params.get("generator_charge_rate_w", 200.0)
-        has_hybrid = bool(params.get("hybrid_boost_available", 1))
+        gen_cont = require_param(params, "generator_output_w", "GeneratorModel")
+        gen_int = require_param(params, "generator_output_intermittent_w", "GeneratorModel")
+        charge_rate = require_param(params, "generator_charge_rate_w", "GeneratorModel")
+        has_hybrid = bool(require_param(params, "hybrid_boost_available", "GeneratorModel"))
 
-        elec_demand = conditions.get("total_electrical_power_W", 100.0)
-        engine_load_pct = conditions.get("throttle_pct", 50.0) / 100.0
-        in_vtol = conditions.get("flight_mode_id", 0.0) < 1.5  # hover or transition
-        battery_soc = conditions.get("soc_pct", 80.0)
+        elec_demand = require_param(conditions, "total_electrical_power_W", "GeneratorModel")
+        engine_load_pct = require_param(conditions, "throttle_pct", "GeneratorModel") / 100.0
+        in_vtol = require_param(conditions, "flight_mode_id", "GeneratorModel") < 1.5
+        battery_soc = require_param(conditions, "soc_pct", "GeneratorModel")
 
         # Generator available power depends on engine load headroom
         headroom = max(1.0 - engine_load_pct, 0.0)

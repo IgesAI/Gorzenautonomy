@@ -2,6 +2,10 @@
 
 smear_distance = v_ground * t_exposure
 smear_pixels = smear_distance / GSD
+
+All parameters are REQUIRED — no silent fallback defaults.
+Exposure time must be an explicit input from the sensor specification
+or mission configuration, not assumed.
 """
 
 from __future__ import annotations
@@ -9,6 +13,7 @@ from __future__ import annotations
 import numpy as np
 
 from gorzen.models.base import ModelOutput, SubsystemModel
+from gorzen.validation.parameter_validator import require_param
 
 
 class MotionBlurModel(SubsystemModel):
@@ -27,12 +32,19 @@ class MotionBlurModel(SubsystemModel):
         ]
 
     def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:
-        t_exp = params.get("exposure_time_s", 1.0 / 1000.0)
-        vib_blur = params.get("vibration_blur_px", 0.1)
+        t_exp = require_param(params, "exposure_time_s", "MotionBlurModel")
+        vib_blur = require_param(params, "vibration_blur_px", "MotionBlurModel")
 
-        v_ground = conditions.get("airspeed_ms", 10.0)
-        gsd_m = conditions.get("gsd_cm_px", 1.0) / 100.0
-        max_blur = conditions.get("max_blur_px", 0.5)
+        v_ground = require_param(conditions, "airspeed_ms", "MotionBlurModel")
+        gsd_cm = conditions.get("gsd_cm_px")
+        if gsd_cm is None:
+            gsd_cm = params.get("gsd_cm_px")
+        if gsd_cm is None:
+            raise ValueError(
+                "INSUFFICIENT_DATA: 'gsd_cm_px' is required but missing (context: MotionBlurModel)"
+            )
+        gsd_m = float(gsd_cm) / 100.0
+        max_blur = require_param(conditions, "max_blur_px", "MotionBlurModel")
 
         smear_dist = v_ground * t_exp
         smear_px = smear_dist / (gsd_m + 1e-9)

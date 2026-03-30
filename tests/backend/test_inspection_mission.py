@@ -36,7 +36,7 @@ class TestInspectionMissionConstraints:
             "motion_blur_feasible": blur,
             "battery_feasible": battery,
         }
-        assert isinstance(constraints, dict)
+        assert all(constraints.values()), f"Not all constraints satisfied at feasible point: {constraints}"
         # Fuel endurance and ident confidence thresholds
         fuel_hr = out.get("fuel_endurance_hr", 0.0)
         ident = out.get("identification_confidence", 0.0)

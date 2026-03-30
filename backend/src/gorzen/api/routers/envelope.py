@@ -3,24 +3,25 @@
 from __future__ import annotations
 
 import copy
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from gorzen.api.routers.twin import _twins
+from gorzen.db import twin_repo
+from gorzen.db.session import get_session
 from gorzen.schemas.envelope import EnvelopeRequest, EnvelopeResponse
 from gorzen.schemas.twin_graph import VehicleTwin
-from gorzen.solver.envelope_solver import compute_envelope
+from gorzen.solver.envelope_solver import compute_envelope, estimate_endurance_budget_minutes
 
 router = APIRouter()
 
-# mission_profile params from environment vs constraints (schema flattens these)
 _MISSION_ENV_PARAMS = frozenset({
     "wind_model", "wind_speed_ms", "gust_intensity", "wind_direction_deg",
     "temperature_c", "pressure_hpa", "density_altitude_ft", "ambient_light_lux",
 })
 _MISSION_CONSTRAINT_PARAMS = frozenset({
-    "min_gsd_cm_px", "max_blur_px", "min_identification_confidence",
+    "min_gsd_cm_px", "target_feature_mm", "max_blur_px", "min_identification_confidence",
     "fuel_reserve_pct", "battery_reserve_pct", "min_overlap_pct",
     "max_mission_duration_hr", "max_range_nmi",
 })
@@ -91,12 +92,34 @@ async def compute_default_envelope(request: EnvelopeRequest) -> EnvelopeResponse
     )
 
 
+@router.get("/{twin_id}/endurance-preview")
+async def twin_endurance_preview(
+    twin_id: str,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    speed_ms: float = Query(15.0, ge=0.5, le=80.0),
+    altitude_m: float = Query(50.0, ge=0.0, le=12000.0),
+) -> dict[str, float]:
+    """Approximate electrical vs fuel endurance (minutes) from the physics chain at one flight point."""
+    if twin_id == "default":
+        twin = VehicleTwin()
+    else:
+        twin = await twin_repo.get_vehicle_twin(session, twin_id)
+        if twin is None:
+            raise HTTPException(status_code=404, detail="Twin not found")
+    return estimate_endurance_budget_minutes(twin, speed_ms=speed_ms, altitude_m=altitude_m)
+
+
 @router.post("/{twin_id}/envelope", response_model=EnvelopeResponse)
-async def compute_twin_envelope(twin_id: str, request: EnvelopeRequest) -> EnvelopeResponse:
-    if twin_id not in _twins:
+async def compute_twin_envelope(
+    twin_id: str,
+    request: EnvelopeRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> EnvelopeResponse:
+    twin_model = await twin_repo.get_vehicle_twin(session, twin_id)
+    if twin_model is None:
         raise HTTPException(status_code=404, detail="Twin not found")
 
-    twin = copy.deepcopy(_twins[twin_id])
+    twin = copy.deepcopy(twin_model)
     if request.param_overrides:
         _apply_param_overrides(twin, request.param_overrides)
     return compute_envelope(

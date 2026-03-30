@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +24,7 @@ class PosteriorVersion:
     config_hash: str
     firmware_version: str
     regime: str
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     posteriors: dict[str, PosteriorDistribution] = field(default_factory=dict)
     discrepancy_model_path: str | None = None
     n_observations: int = 0
@@ -54,7 +54,7 @@ class PosteriorStore:
         """Store a new calibration result as a versioned posterior."""
         key = self._key(result.config_hash, result.regime)
         versions = self._index.get(key, [])
-        version_id = f"v{len(versions) + 1}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+        version_id = f"v{len(versions) + 1}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
 
         # Serialize posteriors (without numpy arrays for JSON)
         posterior_data = {}

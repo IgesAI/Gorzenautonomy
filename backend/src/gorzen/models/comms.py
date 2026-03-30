@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from gorzen.models.base import ModelOutput, SubsystemModel
+from gorzen.validation.parameter_validator import require_param
 
 
 class CommsModel(SubsystemModel):
@@ -31,25 +32,26 @@ class CommsModel(SubsystemModel):
         ]
 
     def evaluate(self, params: dict[str, float], conditions: dict[str, float]) -> ModelOutput:
-        tx_power = conditions.get("tx_power_dbm", params.get("tx_power_dbm", 30.0))
-        ant_gain = conditions.get("antenna_gain_dbi", params.get("antenna_gain_dbi", 5.0))
-        rx_sens = conditions.get("receiver_sensitivity_dbm", params.get("receiver_sensitivity_dbm", -100.0))
-        manet_range_nmi = conditions.get("manet_range_nmi", params.get("manet_range_nmi", 75.0))
-        manet_bw = conditions.get("manet_bandwidth_mbps", params.get("manet_bandwidth_mbps", 10.0))
-        satcom = conditions.get("satcom_available", params.get("satcom_available", 1.0))
-        satcom_bw = conditions.get("satcom_bandwidth_mbps", params.get("satcom_bandwidth_mbps", 2.0))
+        tx_power = require_param(params, "tx_power_dbm", "CommsModel")
+        ant_gain = require_param(params, "antenna_gain_dbi", "CommsModel")
+        rx_sens = require_param(params, "receiver_sensitivity_dbm", "CommsModel")
+        manet_range_nmi = require_param(params, "manet_range_nmi", "CommsModel")
+        manet_bw = require_param(params, "manet_bandwidth_mbps", "CommsModel")
+        satcom = require_param(params, "satcom_available", "CommsModel")
+        satcom_bw = require_param(params, "satcom_bandwidth_mbps", "CommsModel")
 
-        distance_km = conditions.get("distance_to_gcs_km", 10.0)
-        encoding_bitrate = conditions.get("encoding_bitrate_mbps", params.get("encoding_bitrate_mbps", 8.0))
+        distance_km = require_param(conditions, "distance_to_gcs_km", "CommsModel")
+        encoding_bitrate = require_param(params, "encoding_bitrate_mbps", "CommsModel")
 
         # Link budget at MANET frequency (~1350 MHz)
-        freq_mhz = conditions.get("manet_frequency_mhz", 1350.0)
+        freq_mhz = require_param(conditions, "manet_frequency_mhz", "CommsModel")
         fspl = 20 * np.log10(max(distance_km, 0.01)) + 20 * np.log10(freq_mhz) + 32.45
 
         received_power = tx_power + 2 * ant_gain - fspl
         link_margin = received_power - rx_sens
 
         max_range_km = manet_range_nmi * 1.852
+        # HEURISTIC: link margin policy
         effective_range = max_range_km if link_margin > 6.0 else max(0, max_range_km * (link_margin / 6.0))
 
         # Available bandwidth: use MANET bandwidth, fall back to SATCOM if out of MANET range
@@ -69,7 +71,7 @@ class CommsModel(SubsystemModel):
             quality_factor = max(20.0, 90.0 * (available_bw / encoding_bitrate))
 
         comms_latency = 20.0 if distance_km <= max_range_km else 600.0
-        link_feasible = link_margin > 3.0
+        link_feasible = link_margin > 3.0  # HEURISTIC: link margin policy
 
         return ModelOutput(
             values={

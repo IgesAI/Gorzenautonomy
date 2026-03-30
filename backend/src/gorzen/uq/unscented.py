@@ -79,8 +79,8 @@ class UnscentedTransform:
         sigmas = np.zeros((2 * n + 1, n))
         sigmas[0] = mean
         for i in range(n):
-            sigmas[i + 1] = mean + sqrt_cov[i]
-            sigmas[n + i + 1] = mean - sqrt_cov[i]
+            sigmas[i + 1] = mean + sqrt_cov[:, i]
+            sigmas[n + i + 1] = mean - sqrt_cov[:, i]
 
         return sigmas, wm, wc
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -15,11 +15,14 @@ class Base(DeclarativeBase):
 
 
 class TwinConfigDB(Base):
-    """Persisted vehicle twin configuration."""
+    """Persisted vehicle twin configuration.
+
+    ``twin_uuid`` matches ``VehicleTwin.twin_id`` and is the public API identifier.
+    """
 
     __tablename__ = "twin_configs"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    twin_uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="")
     version_major: Mapped[int] = mapped_column(Integer, default=0)
@@ -28,9 +31,23 @@ class TwinConfigDB(Base):
     build_hash: Mapped[str] = mapped_column(String(32), default="")
     config_json: Mapped[dict] = mapped_column(JSON, nullable=False)
     firmware_compat: Mapped[dict] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class MissionDraftDB(Base):
+    """Singleton row (id=1) storing the editable mission waypoint list for restart safety."""
+
+    __tablename__ = "mission_drafts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    waypoints_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class CatalogEntryDB(Base):
@@ -45,7 +62,7 @@ class CatalogEntryDB(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     parameters: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     datasheet_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class CalibrationRunDB(Base):
@@ -62,7 +79,7 @@ class CalibrationRunDB(Base):
     n_observations: Mapped[int] = mapped_column(Integer, default=0)
     log_marginal_likelihood: Mapped[float] = mapped_column(Float, default=0.0)
     log_ids: Mapped[list] = mapped_column(JSON, default=list)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class AuditEventDB(Base):
@@ -75,7 +92,7 @@ class AuditEventDB(Base):
     event_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     actor: Mapped[str] = mapped_column(String(255), default="system")
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
-    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
 
 
 class TelemetryLogDB(Base):
@@ -92,5 +109,5 @@ class TelemetryLogDB(Base):
     file_size_bytes: Mapped[int] = mapped_column(Integer, default=0)
     record_count: Mapped[int] = mapped_column(Integer, default=0)
     topics: Mapped[list] = mapped_column(JSON, default=list)
-    metadata: Mapped[dict] = mapped_column(JSON, default=dict)
-    uploaded_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    log_metadata: Mapped[dict] = mapped_column("log_metadata", JSON, default=dict)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -2,21 +2,33 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
+
+from gorzen.api.limiter import limiter
+from gorzen.config import settings
 
 from gorzen.models.perception.niirs_tasks import (
     get_all_levels_summary,
     get_niirs_level,
+)
+from gorzen.services.model_selector import (
+    DeploymentMode,
+    DefectClass,
+    recommend_model,
 )
 from gorzen.services.solar import compute_solar_position
 from gorzen.services.terrain import fetch_elevation, fetch_terrain_profile
 from gorzen.services.weather import fetch_weather
 
 router = APIRouter()
+
+
+def _env_rate_limit() -> str:
+    m = settings.rate_limit_per_minute
+    return f"{m}/minute" if m and m > 0 else "2000/minute"
 
 
 # --- Schemas ---
@@ -51,10 +63,12 @@ class ModelChainPoint(BaseModel):
 # --- Endpoints ---
 
 @router.get("/solar")
+@limiter.limit(_env_rate_limit())
 async def get_solar_position(
-    latitude: float = Query(35.0),
-    longitude: float = Query(-106.0),
-    altitude_m: float = Query(0.0),
+    request: Request,
+    latitude: float = Query(35.0, ge=-90.0, le=90.0),
+    longitude: float = Query(-106.0, ge=-180.0, le=180.0),
+    altitude_m: float = Query(0.0, ge=-500.0, le=9000.0),
 ) -> dict[str, Any]:
     """Compute current solar position and irradiance for a location."""
     result = compute_solar_position(
@@ -80,10 +94,12 @@ async def get_solar_position(
 
 
 @router.get("/weather")
+@limiter.limit(_env_rate_limit())
 async def get_weather(
-    latitude: float = Query(35.0),
-    longitude: float = Query(-106.0),
-    elevation_m: float = Query(0.0),
+    request: Request,
+    latitude: float = Query(35.0, ge=-90.0, le=90.0),
+    longitude: float = Query(-106.0, ge=-180.0, le=180.0),
+    elevation_m: float = Query(0.0, ge=-500.0, le=9000.0),
 ) -> dict[str, Any]:
     """Fetch current weather conditions with multi-altitude wind profiles."""
     try:
@@ -118,9 +134,11 @@ async def get_weather(
 
 
 @router.get("/terrain")
+@limiter.limit(_env_rate_limit())
 async def get_terrain_elevation(
-    latitude: float = Query(35.0),
-    longitude: float = Query(-106.0),
+    request: Request,
+    latitude: float = Query(35.0, ge=-90.0, le=90.0),
+    longitude: float = Query(-106.0, ge=-180.0, le=180.0),
 ) -> dict[str, Any]:
     """Fetch ground elevation for a point."""
     try:
@@ -137,11 +155,15 @@ async def get_terrain_elevation(
 
 
 @router.post("/terrain/profile")
-async def get_terrain_profile(request: TerrainProfileRequest) -> dict[str, Any]:
+@limiter.limit(_env_rate_limit())
+async def get_terrain_profile(http_request: Request, request: TerrainProfileRequest) -> dict[str, Any]:
     """Fetch terrain elevation profile along a path."""
     points = [(p[0], p[1]) for p in request.points if len(p) >= 2]
     if not points:
         raise HTTPException(status_code=400, detail="No valid points")
+    for lat, lon in points:
+        if not -90.0 <= lat <= 90.0 or not -180.0 <= lon <= 180.0:
+            raise HTTPException(status_code=400, detail=f"Invalid coordinates: lat={lat}, lon={lon}")
 
     try:
         result = await fetch_terrain_profile(points)
@@ -315,3 +337,69 @@ async def get_model_chain_point(request: ModelChainPoint) -> dict[str, Any]:
             "tasks": niirs_info.tasks,
         },
     }
+
+
+# --- Model Recommendation ---
+
+
+class ModelRecommendationRequest(BaseModel):
+    gsd_cm: float = 1.0
+    niirs: float = 6.0
+    pixels_on_target: float = 50.0
+    deployment_mode: str = "either"
+    latency_budget_ms: float = 500.0
+    defect_classes: list[str] = ["generic"]
+    bandwidth_mbps: float = 10.0
+
+
+@router.post("/model-recommendation")
+async def model_recommendation(request: ModelRecommendationRequest) -> dict[str, Any]:
+    """Recommend optimal VLM/CV model based on image quality and operational constraints."""
+    mode_map = {
+        "onboard": DeploymentMode.ONBOARD,
+        "cloud": DeploymentMode.CLOUD,
+        "either": DeploymentMode.EITHER,
+        "rtn": DeploymentMode.CLOUD,
+        "both": DeploymentMode.EITHER,
+    }
+    deploy_mode = mode_map.get(request.deployment_mode, DeploymentMode.EITHER)
+
+    defect_map = {dc.value: dc for dc in DefectClass}
+    defect_classes = [defect_map.get(d, DefectClass.GENERIC) for d in request.defect_classes]
+
+    rec = recommend_model(
+        gsd_cm=request.gsd_cm,
+        niirs=request.niirs,
+        pixels_on_target=request.pixels_on_target,
+        deployment_mode=deploy_mode,
+        latency_budget_ms=request.latency_budget_ms,
+        defect_classes=defect_classes,
+        bandwidth_mbps=request.bandwidth_mbps,
+    )
+
+    result: dict[str, Any] = {
+        "primary_model": {
+            "name": rec.primary_model.name,
+            "family": rec.primary_model.family,
+            "deployment": rec.primary_model.deployment.value,
+            "latency_ms": rec.primary_model.latency_ms,
+            "accuracy_mAP": rec.primary_model.accuracy_mAP,
+            "edge_compatible": rec.primary_model.edge_compatible,
+            "description": rec.primary_model.description,
+        },
+        "estimated_detection_probability": round(rec.estimated_detection_probability, 4),
+        "estimated_false_positive_rate": round(rec.estimated_false_positive_rate, 4),
+        "deployment_mode": rec.deployment_mode.value,
+        "reasoning": rec.reasoning,
+        "constraints_met": rec.constraints_met,
+        "performance_notes": rec.performance_notes,
+    }
+    if rec.fallback_model:
+        result["fallback_model"] = {
+            "name": rec.fallback_model.name,
+            "family": rec.fallback_model.family,
+            "deployment": rec.fallback_model.deployment.value,
+            "latency_ms": rec.fallback_model.latency_ms,
+        }
+
+    return result
