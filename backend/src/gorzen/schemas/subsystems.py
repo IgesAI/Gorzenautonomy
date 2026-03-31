@@ -11,7 +11,13 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
-from gorzen.schemas.parameter import ParameterClassification, TypedParameter, UncertaintySpec, param
+from gorzen.schemas.parameter import (
+    DistributionType,
+    ParameterClassification,
+    TypedParameter,
+    UncertaintySpec,
+    param,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -520,7 +526,9 @@ class CruisePropulsionConfig(BaseModel):
         precision=0,
         group="engine",
         display_name="BSFC (Cruise)",
-        uncertainty=UncertaintySpec(distribution="normal", params={"mean": 500.0, "std": 25.0}),
+        uncertainty=UncertaintySpec(
+            distribution=DistributionType.NORMAL, params={"mean": 500.0, "std": 25.0}
+        ),
     )
     cooling_type: TypedParameter = param(
         "air_cooled", "1", group="engine", display_name="Cooling Type"
@@ -801,7 +809,9 @@ class EnergyConfig(BaseModel):
         precision=0,
         group="health",
         display_name="State of Health",
-        uncertainty=UncertaintySpec(distribution="normal", params={"mean": 100.0, "std": 3.0}),
+        uncertainty=UncertaintySpec(
+            distribution=DistributionType.NORMAL, params={"mean": 100.0, "std": 3.0}
+        ),
     )
     wiring_loss_mohm: TypedParameter = param(
         5.0,

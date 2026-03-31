@@ -207,11 +207,13 @@ async def calibrate_battery(req: BatteryCalibrateRequest) -> BatteryCalibrateRes
 
         raise HTTPException(status_code=400, detail=f"Missing columns: {missing}")
 
+    import numpy as np
+
     model, diag = fit_battery_model(
-        df["flight_time_min"].values,
-        df["payload_kg"].values,
-        df["ground_speed_mps"].values,
-        df["headwind_mps"].values,
+        np.asarray(df["flight_time_min"].values, dtype=float),
+        np.asarray(df["payload_kg"].values, dtype=float),
+        np.asarray(df["ground_speed_mps"].values, dtype=float),
+        np.asarray(df["headwind_mps"].values, dtype=float),
     )
     return BatteryCalibrateResponse(model=model.to_dict(), diagnostics=diag)
 

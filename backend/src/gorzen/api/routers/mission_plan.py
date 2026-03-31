@@ -211,7 +211,7 @@ async def export_qgc() -> dict[str, Any]:
     from gorzen.schemas.mission import MissionPlan, WaypointType
     from gorzen.schemas.mission import Waypoint as SchemaWaypoint
 
-    wps = mission_service.get_waypoints()
+    wps = mission_service.waypoints
     schema_wps = [
         SchemaWaypoint(
             sequence=i,
@@ -237,7 +237,7 @@ async def export_kml() -> Any:
     from gorzen.schemas.mission import MissionPlan, WaypointType
     from gorzen.schemas.mission import Waypoint as SchemaWaypoint
 
-    wps = mission_service.get_waypoints()
+    wps = mission_service.waypoints
     schema_wps = [
         SchemaWaypoint(
             sequence=i,
@@ -263,7 +263,7 @@ async def export_px4() -> dict[str, Any]:
     from gorzen.schemas.mission import MissionPlan, WaypointType
     from gorzen.schemas.mission import Waypoint as SchemaWaypoint
 
-    wps = mission_service.get_waypoints()
+    wps = mission_service.waypoints
     schema_wps = [
         SchemaWaypoint(
             sequence=i,

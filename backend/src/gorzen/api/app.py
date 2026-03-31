@@ -51,7 +51,7 @@ def _find_sqlalchemy_db_error(exc: BaseException) -> BaseException | None:
     return None
 
 
-async def _rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+async def _rate_limit_exceeded_handler(request: Request, exc: Exception) -> JSONResponse:
     return JSONResponse({"detail": "Rate limit exceeded"}, status_code=429)
 
 

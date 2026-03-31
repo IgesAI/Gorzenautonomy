@@ -34,7 +34,7 @@ class EvidenceBinding:
     last_updated: str = ""
 
 
-def make_scipy_dist(spec: UncertaintySpec) -> stats.rv_continuous | stats.rv_discrete:
+def make_scipy_dist(spec: UncertaintySpec) -> stats.rv_continuous_frozen | stats.rv_discrete_frozen:
     """Convert an UncertaintySpec into a scipy distribution object."""
     p = spec.params
     dt = spec.distribution
@@ -75,7 +75,7 @@ def sample_from_spec(
         rng = np.random.default_rng(42)
 
     dist = make_scipy_dist(spec)
-    samples = dist.rvs(size=n, random_state=rng.integers(0, 2**31))
+    samples = np.asarray(dist.rvs(size=n, random_state=rng.integers(0, 2**31)))
 
     if spec.bounds is not None:
         lo, hi = spec.bounds

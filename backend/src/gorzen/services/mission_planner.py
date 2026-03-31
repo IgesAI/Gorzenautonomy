@@ -220,6 +220,11 @@ class MissionService:
                         gimbal_yaw_deg=float("nan"),
                         loiter_time_s=wp.loiter_time_s,
                         acceptance_radius_m=wp.acceptance_radius_m,
+                        yaw_deg=float("nan"),
+                        camera_action=MissionItem.CameraAction.NONE,
+                        camera_photo_interval_s=float("nan"),
+                        camera_photo_distance_m=float("nan"),
+                        vehicle_action=MissionItem.VehicleAction.NONE,
                     )
                 )
 

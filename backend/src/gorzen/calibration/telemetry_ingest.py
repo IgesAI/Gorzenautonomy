@@ -128,8 +128,8 @@ class DataFlashParser:
 
                 dataset.topics.add(msg_type)
                 fields = {}
-                if hasattr(msg, "_fieldnames"):
-                    for fname in msg._fieldnames:
+                if hasattr(msg, "_fieldnames") and msg._fieldnames:
+                    for fname in msg._fieldnames:  # type: ignore[union-attr]
                         val = getattr(msg, fname, None)
                         if val is not None:
                             fields[fname] = (

@@ -16,12 +16,18 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 try:
-    from pyulog import ULog
+    from pyulog import ULog as _ULog
 
     PYULOG_AVAILABLE = True
 except ImportError:
     PYULOG_AVAILABLE = False
-    ULog = None  # type: ignore
+    _ULog = None
+
+
+def _load_ulog(data: bytes) -> Any:
+    if not PYULOG_AVAILABLE or _ULog is None:
+        raise RuntimeError("pyulog not installed")
+    return _ULog(io.BytesIO(data))
 
 
 @dataclass
@@ -107,10 +113,7 @@ CALIBRATION_TOPICS = {
 
 def parse_ulog(data: bytes, filename: str = "upload.ulg") -> LogSummary:
     """Parse a uLog file and return a summary."""
-    if not PYULOG_AVAILABLE:
-        raise RuntimeError("pyulog not installed")
-
-    ulog = ULog(io.BytesIO(data))
+    ulog = _load_ulog(data)
 
     # Extract parameters
     params: dict[str, Any] = {}
@@ -166,7 +169,7 @@ def extract_timeseries(
     if not PYULOG_AVAILABLE:
         raise RuntimeError("pyulog not installed")
 
-    ulog = ULog(io.BytesIO(data))
+    ulog = _load_ulog(data)
 
     # Find the topic
     matched = [d for d in ulog.data_list if d.name == topic]
@@ -218,7 +221,7 @@ def extract_calibration_data(data: bytes) -> dict[str, Any]:
     if not PYULOG_AVAILABLE:
         raise RuntimeError("pyulog not installed")
 
-    ulog = ULog(io.BytesIO(data))
+    ulog = _load_ulog(data)
     result: dict[str, Any] = {"topics_found": [], "data": {}}
 
     for d in ulog.data_list:
@@ -278,7 +281,7 @@ def analyze_vibration(data: bytes) -> dict[str, Any]:
     if not PYULOG_AVAILABLE:
         return {"available": False}
 
-    ulog = ULog(io.BytesIO(data))
+    ulog = _load_ulog(data)
     matched = [d for d in ulog.data_list if d.name == "sensor_combined"]
     if not matched:
         return {"available": False, "reason": "sensor_combined topic not in log"}
@@ -316,7 +319,7 @@ def analyze_flight_quality(data: bytes) -> dict[str, Any]:
     if not PYULOG_AVAILABLE:
         return {}
 
-    ulog = ULog(io.BytesIO(data))
+    ulog = _load_ulog(data)
     quality: dict[str, Any] = {}
 
     # Battery health

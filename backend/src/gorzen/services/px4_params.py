@@ -23,7 +23,7 @@ def _safe_eval(expr: str) -> float:
     }
 
     def _eval(n: ast.expr) -> float:
-        if isinstance(n, ast.Constant):
+        if isinstance(n, ast.Constant) and isinstance(n.value, (int, float)):
             return float(n.value)
         if isinstance(n, ast.BinOp) and type(n.op) in _ops:
             return _ops[type(n.op)](_eval(n.left), _eval(n.right))

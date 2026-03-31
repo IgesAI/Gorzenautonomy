@@ -225,6 +225,7 @@ class MAVLinkTelemetryService:
         try:
             await self.disconnect()
             _kill_mavsdk_servers()
+            assert mavutil is not None
 
             device, baud = _parse_address(address)
             logger.info("Connecting to %s @ %d baud", device, baud)
@@ -232,7 +233,7 @@ class MAVLinkTelemetryService:
             loop = asyncio.get_running_loop()
             self._conn = await loop.run_in_executor(
                 None,
-                lambda: mavutil.mavlink_connection(device, baud=baud, source_system=255),
+                lambda: mavutil.mavlink_connection(device, baud=baud, source_system=255),  # type: ignore[union-attr]
             )
 
             logger.info("Waiting for heartbeat …")

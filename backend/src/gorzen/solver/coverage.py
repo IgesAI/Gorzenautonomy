@@ -235,7 +235,7 @@ def optimize_waypoint_order_ortools(
         return dist(from_node, to_node)
 
     routing.SetArcCostEvaluatorOfAllVehicles(routing.RegisterTransitCallback(distance_callback))
-    routing.SetFirstSolutionStrategy(routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)
+    routing.SetFirstSolutionStrategy(routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)  # type: ignore[attr-defined]
 
     solution = routing.Solve()
     if not solution:
