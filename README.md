@@ -1,4 +1,4 @@
-gitTi want to # Gorzenautonomy
+# Gorzenautonomy
 
 Digital-Twin Platform for VTOL Fleet Configuration and Perception-Constrained Autonomous Mission Planning.
 
@@ -49,6 +49,17 @@ npm run dev
 ```
 
 The frontend proxies `/api` to `http://localhost:8000`.
+
+### Serial / USB telemetry (Live tab)
+
+MAVLink over COM/tty requires **[pyserial](https://pypi.org/project/pyserial/)** (`import serial`). It is listed in `backend/pyproject.toml`; if you see `No module named 'serial'`, reinstall deps from the backend venv:
+
+```bash
+cd backend
+pip install pyserial
+# or
+pip install -e .
+```
 
 ## Testing
 

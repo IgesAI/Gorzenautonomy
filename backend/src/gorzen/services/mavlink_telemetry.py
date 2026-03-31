@@ -147,6 +147,19 @@ class ConnectionState:
     messages_received: int = 0
 
 
+def _address_uses_serial_port(address: str) -> bool:
+    """True if pymavlink will use pyserial (USB/UART), not only UDP/TCP."""
+    a = address.strip()
+    al = a.lower()
+    if al.startswith("serial://"):
+        return True
+    if sys.platform == "win32" and len(a) >= 3 and a.upper().startswith("COM"):
+        return True
+    if a.startswith("/dev/"):
+        return True
+    return False
+
+
 def _parse_address(address: str) -> tuple[str, int]:
     """Convert our address format to pymavlink device + baud."""
     if address.startswith("serial://"):
@@ -198,6 +211,12 @@ class MAVLinkTelemetryService:
         self._running = False
         self._connect_time = 0.0
         self._vehicle_type: int = 2
+        self._last_connect_hint: str | None = None
+
+    @property
+    def last_connect_hint(self) -> str | None:
+        """Set on last failed connect (e.g. missing pyserial); safe to return to clients."""
+        return self._last_connect_hint
 
     @property
     def frame(self) -> TelemetryFrame:
@@ -217,10 +236,24 @@ class MAVLinkTelemetryService:
         return None
 
     async def connect(self, address: str = "udp://:14540") -> bool:
+        self._last_connect_hint = None
         if not PYMAVLINK_AVAILABLE:
             logger.warning("pymavlink not installed — running in simulation mode")
             self._connection = ConnectionState(connected=False, address=address)
             return False
+
+        if _address_uses_serial_port(address):
+            try:
+                import serial  # noqa: F401 — pyserial; pymavlink needs this for COM/tty links
+            except ImportError:
+                self._last_connect_hint = (
+                    "Serial telemetry requires the 'pyserial' package (import name: serial). "
+                    "From the backend folder: pip install pyserial  "
+                    "or reinstall: pip install -e ."
+                )
+                logger.error("Telemetry: %s", self._last_connect_hint)
+                self._connection = ConnectionState(connected=False, address=address)
+                return False
 
         try:
             await self.disconnect()
@@ -299,6 +332,24 @@ class MAVLinkTelemetryService:
                 self._vehicle_type,
             )
             return True
+
+        except ModuleNotFoundError as e:
+            if e.name == "serial":
+                self._last_connect_hint = (
+                    "Missing Python module 'serial' (install PyPI package pyserial). "
+                    "Run: pip install pyserial"
+                )
+                logger.error("Connection failed: pyserial not installed (ModuleNotFoundError: serial)")
+            else:
+                logger.error("Connection failed: %s", e)
+            if self._conn is not None:
+                try:
+                    self._conn.close()
+                except Exception:
+                    pass
+                self._conn = None
+            self._connection = ConnectionState(connected=False, address=address)
+            return False
 
         except Exception as e:
             logger.error("Connection failed: %s", e)

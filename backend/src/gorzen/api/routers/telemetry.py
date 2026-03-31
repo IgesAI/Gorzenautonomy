@@ -65,12 +65,14 @@ class ConnectRequest(BaseModel):
 async def connect_drone(request: ConnectRequest) -> dict[str, Any]:
     """Connect to a PX4 drone or SITL instance."""
     success = await telemetry_service.connect(request.address)
+    hint = telemetry_service.last_connect_hint
     return {
         "connected": success,
         "address": request.address,
         "message": "Connected successfully"
         if success
         else "Connection failed — check address and drone status",
+        **({"hint": hint} if not success and hint else {}),
     }
 
 
