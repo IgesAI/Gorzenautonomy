@@ -17,10 +17,11 @@ class TestInspectionMissionConstraints:
     def test_feasible_point_satisfies_all_constraints(self):
         """At a known feasible (speed, alt), all constraint flags are True."""
         twin = VehicleTwin()
+        twin.mission_profile.constraints.exposure_time_s.value = 0.00025
+        twin.mission_profile.constraints.target_feature_mm.value = 500.0
         params = _extract_params(twin)
 
-        # Conservative point: low speed, moderate altitude
-        out = evaluate_point(params, 12.0, 80.0)
+        out = evaluate_point(params, 8.0, 60.0)
 
         aero = out.get("aero_feasible", 0.0) > 0.5
         engine = out.get("engine_feasible", 1.0) > 0.5

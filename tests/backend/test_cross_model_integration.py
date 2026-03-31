@@ -40,24 +40,24 @@ class TestConstraintFailurePropagation:
     def test_identification_degraded_when_blur_exceeds_limit(self):
         """When smear_pixels is high, identification_confidence must drop."""
         twin = VehicleTwin()
+        twin.mission_profile.constraints.target_feature_mm.value = 500.0
         params = _extract_params(twin)
 
-        # Low speed: blur OK
         out_slow = evaluate_point(params, 5.0, 50.0)
         ident_slow = out_slow.get("identification_confidence", 0.0)
 
-        # High speed: blur worse
         out_fast = evaluate_point(params, 25.0, 50.0)
         ident_fast = out_fast.get("identification_confidence", 0.0)
 
+        assert ident_slow > 0, "Slow speed should produce nonzero identification confidence"
         assert ident_fast < ident_slow, "Higher speed → more blur → lower identification confidence"
 
     def test_gsd_and_blur_consistent(self):
         """GSD and motion blur use same inputs; both feed identification."""
         twin = VehicleTwin()
+        twin.mission_profile.constraints.target_feature_mm.value = 500.0
         params = _extract_params(twin)
 
-        # At 50m: better GSD than 150m
         out_low = evaluate_point(params, 15.0, 50.0)
         out_high = evaluate_point(params, 15.0, 150.0)
 
@@ -67,4 +67,5 @@ class TestConstraintFailurePropagation:
 
         ident_low = out_low.get("identification_confidence", 0.0)
         ident_high = out_high.get("identification_confidence", 0.0)
+        assert ident_low > 0, "Lower altitude should produce nonzero identification"
         assert ident_low > ident_high, "Better GSD → higher identification confidence"
