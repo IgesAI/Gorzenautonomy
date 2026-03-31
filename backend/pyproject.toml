@@ -59,3 +59,30 @@ line-length = 100
 asyncio_mode = "auto"
 testpaths = ["../tests/backend"]
 addopts = "-v --tb=short"
+
+# Unit tests hit models, envelope solver, core schemas, and UQ — not API/DB/services.
+# Omit paths that need integration tests so --cov-fail-under matches this suite.
+[tool.coverage.run]
+source = ["src/gorzen"]
+omit = [
+    "*/gorzen/api/*",
+    "*/gorzen/calibration/*",
+    "*/gorzen/config.py",
+    "*/gorzen/data/*",
+    "*/gorzen/db/*",
+    "*/gorzen/services/*",
+    "*/gorzen/schemas/catalog.py",
+    "*/gorzen/schemas/mission.py",
+    "*/gorzen/schemas/validation_result.py",
+    "*/gorzen/solver/coverage.py",
+    "*/gorzen/solver/mission_planner.py",
+    "*/gorzen/solver/trajectory.py",
+    "*/gorzen/uq/pce.py",
+    "*/gorzen/uq/propagation.py",
+    "*/gorzen/uq/unscented.py",
+    "*/gorzen/validation/assumption_audit.py",
+    "*/gorzen/validation/computation_audit.py",
+    "*/gorzen/validation/parameter_resolver.py",
+    "*/gorzen/validation/pyodm_client.py",
+    "*/gorzen/models/perception/niirs_tasks.py",
+]

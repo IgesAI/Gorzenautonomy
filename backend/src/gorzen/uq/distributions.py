@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 from scipy import stats
@@ -34,10 +35,8 @@ class EvidenceBinding:
     last_updated: str = ""
 
 
-def make_scipy_dist(
-    spec: UncertaintySpec,
-) -> stats.rv_continuous_frozen | stats.rv_discrete_frozen:
-    """Convert an UncertaintySpec into a scipy distribution object."""
+def make_scipy_dist(spec: UncertaintySpec) -> Any:
+    """Convert an UncertaintySpec into a scipy frozen distribution (rv_frozen)."""
     p = spec.params
     dt = spec.distribution
 
