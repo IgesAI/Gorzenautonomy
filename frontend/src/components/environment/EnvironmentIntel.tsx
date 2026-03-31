@@ -3,6 +3,7 @@ import { GlassPanel } from '../layout/GlassPanel';
 import { chartStyles } from '../../theme/chartStyles';
 import { colors } from '../../theme/tokens';
 import { api } from '../../api/client';
+import { feasibilityEnvFromWeather } from '../../data/environmentSnapshot';
 
 interface WindLayer {
   height_m: number;
@@ -275,10 +276,11 @@ export function EnvironmentIntel({ onEnvironmentData, sharedLocation }: Environm
 
       if (onEnvironmentData) {
         const surfaceWind = w.wind_layers?.[0];
+        const fe = feasibilityEnvFromWeather(w);
         onEnvironmentData({
-          temperature_c: w.temperature_c,
+          temperature_c: fe.temperature_c,
           pressure_hpa: w.pressure_hpa,
-          wind_speed_ms: surfaceWind?.speed_ms ?? 0,
+          wind_speed_ms: fe.wind_ms,
           wind_direction_deg: surfaceWind?.direction_deg ?? 0,
           density_altitude_ft: w.density_altitude_ft,
           ambient_light_lux: s.illuminance_lux,
