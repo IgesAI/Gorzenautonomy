@@ -240,8 +240,12 @@ class MissionService:
                 "success": True,
                 "waypoints_uploaded": len(items),
             }
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+        except Exception:
+            logger.exception("MAVSDK mission upload failed")
+            return {
+                "success": False,
+                "error": "Mission upload failed. Check drone connection and try again.",
+            }
 
     async def download_from_drone(self, system_address: str = "udp://:14540") -> dict[str, Any]:
         """Download current mission from PX4 via MAVSDK."""
@@ -275,8 +279,12 @@ class MissionService:
                 "waypoints_downloaded": len(self._waypoints),
                 "analysis": analyze_mission(self._waypoints).__dict__,
             }
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+        except Exception:
+            logger.exception("MAVSDK mission download failed")
+            return {
+                "success": False,
+                "error": "Mission download failed. Check drone connection and try again.",
+            }
 
 
 def waypoints_to_json(waypoints: list[Waypoint]) -> list[dict[str, Any]]:

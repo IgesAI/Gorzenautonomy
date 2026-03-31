@@ -1,5 +1,9 @@
 name: CI
 
+# Least privilege: read repo contents only (checkout, cache); no packages/issues write.
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main, develop]
