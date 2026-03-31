@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import structlog
-from alembic import command
+import alembic.command
 from alembic.config import Config
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -76,7 +76,7 @@ def _run_alembic_upgrade() -> None:
         log.warning("alembic.ini not found — skipping migrations", path=str(ini))
         return
     cfg = Config(str(ini))
-    command.upgrade(cfg, "head")
+    alembic.command.upgrade(cfg, "head")
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):

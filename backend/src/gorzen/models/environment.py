@@ -33,10 +33,9 @@ class DrydenTurbulence:
     ) -> np.ndarray:
         """Generate turbulence velocity samples [n_steps x 3] (u, v, w components).
         Uses fixed seed when rng is None for deterministic behavior."""
-        if rng is None:
-            rng = np.random.default_rng(42)
+        gen: np.random.Generator = rng if rng is not None else np.random.default_rng(42)
 
-        white = rng.standard_normal((n_steps, 3))
+        white = gen.standard_normal((n_steps, 3))
         turb = np.zeros((n_steps, 3))
 
         V = max(V, 0.5)
@@ -83,10 +82,9 @@ class VonKarmanTurbulence:
         self, V: float, dt: float, n_steps: int, rng: np.random.Generator | None = None
     ) -> np.ndarray:
         """Generate turbulence samples. Uses fixed seed when rng is None for deterministic behavior."""
-        if rng is None:
-            rng = np.random.default_rng(42)
+        gen: np.random.Generator = rng if rng is not None else np.random.default_rng(42)
         # Approximate Von Karman via filtered noise (similar shape, different spectral roll-off)
-        white = rng.standard_normal((n_steps, 3))
+        white = gen.standard_normal((n_steps, 3))
         turb = np.zeros((n_steps, 3))
         V = max(V, 0.5)
         au = 1.339 * V / (self.Lu + 1e-6)

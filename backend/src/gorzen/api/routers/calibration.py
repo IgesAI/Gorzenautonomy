@@ -210,10 +210,10 @@ async def calibrate_battery(req: BatteryCalibrateRequest) -> BatteryCalibrateRes
     import numpy as np
 
     model, diag = fit_battery_model(
-        np.asarray(df["flight_time_min"].values, dtype=float),
-        np.asarray(df["payload_kg"].values, dtype=float),
-        np.asarray(df["ground_speed_mps"].values, dtype=float),
-        np.asarray(df["headwind_mps"].values, dtype=float),
+        np.ascontiguousarray(df["flight_time_min"].to_numpy(), dtype=np.float64),
+        np.ascontiguousarray(df["payload_kg"].to_numpy(), dtype=np.float64),
+        np.ascontiguousarray(df["ground_speed_mps"].to_numpy(), dtype=np.float64),
+        np.ascontiguousarray(df["headwind_mps"].to_numpy(), dtype=np.float64),
     )
     return BatteryCalibrateResponse(model=model.to_dict(), diagnostics=diag)
 

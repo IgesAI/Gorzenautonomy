@@ -25,9 +25,12 @@ except ImportError:
 
 
 def _load_ulog(data: bytes) -> Any:
-    if not PYULOG_AVAILABLE or _ULog is None:
+    if not PYULOG_AVAILABLE:
         raise RuntimeError("pyulog not installed")
-    return _ULog(io.BytesIO(data))
+    loader = _ULog
+    if loader is None:
+        raise RuntimeError("pyulog not installed")
+    return loader(io.BytesIO(data))
 
 
 @dataclass
@@ -117,11 +120,14 @@ def parse_ulog(data: bytes, filename: str = "upload.ulg") -> LogSummary:
 
     # Extract parameters
     params: dict[str, Any] = {}
-    if hasattr(ulog, "initial_parameters") and ulog.initial_parameters:
-        for p_name, p_val in ulog.initial_parameters.items():
+    initial = getattr(ulog, "initial_parameters", None)
+    if initial:
+        for p_name, p_val in initial.items():
             params[p_name] = p_val
-    elif hasattr(ulog, "params"):
-        params = dict(ulog.params)
+    else:
+        legacy = getattr(ulog, "params", None)
+        if isinstance(legacy, dict):
+            params = dict(legacy)
 
     # Duration
     start = ulog.start_timestamp / 1e6 if ulog.start_timestamp else 0

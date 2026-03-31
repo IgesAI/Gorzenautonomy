@@ -34,7 +34,9 @@ class EvidenceBinding:
     last_updated: str = ""
 
 
-def make_scipy_dist(spec: UncertaintySpec) -> stats.rv_continuous_frozen | stats.rv_discrete_frozen:
+def make_scipy_dist(
+    spec: UncertaintySpec,
+) -> stats.rv_continuous_frozen | stats.rv_discrete_frozen:
     """Convert an UncertaintySpec into a scipy distribution object."""
     p = spec.params
     dt = spec.distribution
@@ -71,11 +73,11 @@ def sample_from_spec(
     rng: np.random.Generator | None = None,
 ) -> np.ndarray:
     """Draw n samples from an UncertaintySpec. Uses fixed seed when rng is None for determinism."""
-    if rng is None:
-        rng = np.random.default_rng(42)
+    gen: np.random.Generator = rng if rng is not None else np.random.default_rng(42)
 
     dist = make_scipy_dist(spec)
-    samples = np.asarray(dist.rvs(size=n, random_state=rng.integers(0, 2**31)))
+    raw = dist.rvs(size=n, random_state=gen.integers(0, 2**31))
+    samples = np.asarray(raw, dtype=np.float64)
 
     if spec.bounds is not None:
         lo, hi = spec.bounds
@@ -94,15 +96,14 @@ def sample_correlated(
 
     Returns shape (n, len(specs)). Uses fixed seed when rng is None for determinism.
     """
-    if rng is None:
-        rng = np.random.default_rng(42)
+    gen: np.random.Generator = rng if rng is not None else np.random.default_rng(42)
 
     k = len(specs)
     assert correlation_matrix.shape == (k, k)
 
     # Generate correlated standard normals
     L = np.linalg.cholesky(correlation_matrix)
-    z = rng.standard_normal((n, k)) @ L.T
+    z = gen.standard_normal((n, k)) @ L.T
 
     # Transform through marginal CDFs via probability integral transform
     u = stats.norm.cdf(z)

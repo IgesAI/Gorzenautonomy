@@ -235,9 +235,12 @@ def optimize_waypoint_order_ortools(
         return dist(from_node, to_node)
 
     routing.SetArcCostEvaluatorOfAllVehicles(routing.RegisterTransitCallback(distance_callback))
-    routing.SetFirstSolutionStrategy(routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC)  # type: ignore[attr-defined]
+    search_parameters = pywrapcp.DefaultRoutingSearchParameters()
+    search_parameters.first_solution_strategy = (
+        routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
+    )
 
-    solution = routing.Solve()
+    solution = routing.SolveWithParameters(search_parameters)
     if not solution:
         return list(range(len(waypoints)))
 

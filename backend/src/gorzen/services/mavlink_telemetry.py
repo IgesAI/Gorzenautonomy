@@ -231,19 +231,25 @@ class MAVLinkTelemetryService:
             logger.info("Connecting to %s @ %d baud", device, baud)
 
             loop = asyncio.get_running_loop()
+            mav = mavutil
             self._conn = await loop.run_in_executor(
                 None,
-                lambda: mavutil.mavlink_connection(device, baud=baud, source_system=255),  # type: ignore[union-attr]
+                lambda d=device, b=baud: mav.mavlink_connection(d, baud=b, source_system=255),  # type: ignore[union-attr]
             )
+
+            conn = self._conn
+            if conn is None:
+                self._connection = ConnectionState(connected=False, address=address)
+                return False
 
             logger.info("Waiting for heartbeat …")
             heartbeat = await asyncio.wait_for(
-                loop.run_in_executor(None, lambda: self._conn.wait_heartbeat(timeout=30)),
+                loop.run_in_executor(None, lambda c=conn: c.wait_heartbeat(timeout=30)),
                 timeout=35.0,
             )
             if heartbeat is None:
                 logger.error("No heartbeat received")
-                self._conn.close()
+                conn.close()
                 self._conn = None
                 self._connection = ConnectionState(connected=False, address=address)
                 return False
@@ -251,7 +257,7 @@ class MAVLinkTelemetryService:
             self._vehicle_type = heartbeat.type
             self._connection = ConnectionState(
                 connected=True,
-                system_id=self._conn.target_system,
+                system_id=conn.target_system,
                 address=address,
                 last_heartbeat=time.time(),
             )
@@ -260,17 +266,17 @@ class MAVLinkTelemetryService:
             # REQUEST_DATA_STREAM — the only method ArduPilot reliably supports.
             # This is exactly what Mission Planner sends.
             for stream_id, rate in [
-                (mavutil.mavlink.MAV_DATA_STREAM_RAW_SENSORS, 2),
-                (mavutil.mavlink.MAV_DATA_STREAM_EXTENDED_STATUS, 2),
-                (mavutil.mavlink.MAV_DATA_STREAM_RC_CHANNELS, 2),
-                (mavutil.mavlink.MAV_DATA_STREAM_POSITION, 10),
-                (mavutil.mavlink.MAV_DATA_STREAM_EXTRA1, 10),
-                (mavutil.mavlink.MAV_DATA_STREAM_EXTRA2, 10),
-                (mavutil.mavlink.MAV_DATA_STREAM_EXTRA3, 2),
+                (mav.mavlink.MAV_DATA_STREAM_RAW_SENSORS, 2),
+                (mav.mavlink.MAV_DATA_STREAM_EXTENDED_STATUS, 2),
+                (mav.mavlink.MAV_DATA_STREAM_RC_CHANNELS, 2),
+                (mav.mavlink.MAV_DATA_STREAM_POSITION, 10),
+                (mav.mavlink.MAV_DATA_STREAM_EXTRA1, 10),
+                (mav.mavlink.MAV_DATA_STREAM_EXTRA2, 10),
+                (mav.mavlink.MAV_DATA_STREAM_EXTRA3, 2),
             ]:
-                self._conn.mav.request_data_stream_send(
-                    self._conn.target_system,
-                    self._conn.target_component,
+                conn.mav.request_data_stream_send(
+                    conn.target_system,
+                    conn.target_component,
                     stream_id,
                     rate,
                     1,
@@ -288,7 +294,7 @@ class MAVLinkTelemetryService:
 
             logger.info(
                 "Connected to system %d at %s (vehicle type %d)",
-                self._conn.target_system,
+                conn.target_system,
                 address,
                 self._vehicle_type,
             )

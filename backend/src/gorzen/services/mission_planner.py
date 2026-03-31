@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -194,6 +194,10 @@ class MissionService:
     def get_geojson(self) -> dict[str, Any]:
         return waypoints_to_geojson(self._waypoints)
 
+    def get_waypoints(self) -> list[Waypoint]:
+        """Return a copy of the current mission waypoints (API / router compatibility)."""
+        return list(self._waypoints)
+
     async def upload_to_drone(self, system_address: str = "udp://:14540") -> dict[str, Any]:
         """Upload current mission to PX4 via MAVSDK."""
         if not MAVSDK_AVAILABLE:
@@ -208,9 +212,10 @@ class MissionService:
             drone = await get_mavsdk_system(system_address)
 
             items = []
+            item_cls = cast(Any, MissionItem)
             for wp in self._waypoints:
                 items.append(
-                    MissionItem(
+                    item_cls(
                         latitude_deg=wp.latitude_deg,
                         longitude_deg=wp.longitude_deg,
                         relative_altitude_m=wp.altitude_m,

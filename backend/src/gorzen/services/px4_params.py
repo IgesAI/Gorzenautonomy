@@ -23,8 +23,14 @@ def _safe_eval(expr: str) -> float:
     }
 
     def _eval(n: ast.expr) -> float:
-        if isinstance(n, ast.Constant) and isinstance(n.value, (int, float)):
-            return float(n.value)
+        if isinstance(n, ast.Constant):
+            val = n.value
+            if isinstance(val, bool):
+                raise ValueError(f"Unsupported boolean literal in expression: {val!r}")
+            if isinstance(val, int):
+                return float(val)
+            if isinstance(val, float):
+                return val
         if isinstance(n, ast.BinOp) and type(n.op) in _ops:
             return _ops[type(n.op)](_eval(n.left), _eval(n.right))
         if isinstance(n, ast.UnaryOp) and isinstance(n.op, ast.USub):

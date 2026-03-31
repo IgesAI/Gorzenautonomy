@@ -21,7 +21,10 @@ class TestInspectionMissionConstraints:
         twin.mission_profile.constraints.target_feature_mm.value = 500.0
         params = _extract_params(twin)
 
-        out = evaluate_point(params, 8.0, 60.0)
+        # Below ~10 m/s the airframe model is in hover: full rotor lift drives
+        # electrical load high enough to fail battery voltage feasibility on the
+        # default pack. Use transition-region speed so wing offload is meaningful.
+        out = evaluate_point(params, 15.0, 60.0)
 
         aero = out.get("aero_feasible", 0.0) > 0.5
         engine = out.get("engine_feasible", 1.0) > 0.5
@@ -59,7 +62,8 @@ class TestInspectionMissionConstraints:
                 blur = out.get("motion_blur_feasible", 1.0) > 0.5
                 batt = out.get("battery_feasible", 1.0) > 0.5
                 ceiling = alt * 3.281 <= params.get("service_ceiling_ft", 99999)
-                expected = aero and engine and fuel and blur and batt and ceiling
+                gsd_ok = out.get("gsd_cm_px", 0.0) <= params.get("min_gsd_cm_px", 2.0)
+                expected = aero and engine and fuel and blur and batt and ceiling and gsd_ok
 
                 mask_val = resp.speed_altitude_feasibility.feasible_mask[i][j]
                 assert mask_val == expected, f"Mismatch at ({spd}, {alt})"
