@@ -703,7 +703,6 @@ class MAVLinkTelemetryService:
                 )
                 params: dict[str, float] = {}
                 param_count = -1
-                last_param_time = time.time()
                 no_new_count = 0
 
                 while True:
@@ -713,7 +712,6 @@ class MAVLinkTelemetryService:
                             pid = msg.param_id.rstrip("\x00")
                             params[pid] = msg.param_value
                             param_count = msg.param_count
-                            last_param_time = time.time()
                             no_new_count = 0
                             if len(params) % 50 == 0:
                                 logger.info("Params progress: %d/%d", len(params), param_count)
