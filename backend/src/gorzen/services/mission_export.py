@@ -6,10 +6,22 @@ Converts internal MissionPlan to standard autopilot-compatible formats.
 from __future__ import annotations
 
 import json
+import math
 import xml.etree.ElementTree as ET
 from typing import Any
 
 from gorzen.schemas.mission import MissionPlan, Waypoint, WaypointType
+
+_EARTH_R = 6_371_000.0
+
+
+def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Great-circle distance in metres between two WGS-84 points."""
+    rlat1, rlat2 = math.radians(lat1), math.radians(lat2)
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2) ** 2 + math.cos(rlat1) * math.cos(rlat2) * math.sin(dlon / 2) ** 2
+    return _EARTH_R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
 def export_qgc_plan(plan: MissionPlan) -> dict[str, Any]:
@@ -206,11 +218,9 @@ def import_qgc_plan(plan_data: dict[str, Any]) -> MissionPlan:
     plan = MissionPlan(twin_id="imported", waypoints=waypoints)
 
     if waypoints:
-        from gorzen.services.mission_planner import haversine_m
-
         total_dist = 0.0
         for j in range(1, len(waypoints)):
-            total_dist += haversine_m(
+            total_dist += _haversine_m(
                 waypoints[j - 1].latitude_deg,
                 waypoints[j - 1].longitude_deg,
                 waypoints[j].latitude_deg,

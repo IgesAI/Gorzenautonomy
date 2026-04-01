@@ -32,7 +32,7 @@ from typing import Any, AsyncIterator
 logger = logging.getLogger(__name__)
 
 try:
-    from pymavlink import mavutil
+    from pymavlink import mavutil  # type: ignore[import-untyped]
 
     PYMAVLINK_AVAILABLE = True
 except ImportError:
@@ -310,7 +310,7 @@ class MAVLinkTelemetryService:
 
             self._conn = await loop.run_in_executor(
                 None,
-                lambda: mavutil.mavlink_connection(device, baud=baud, source_system=255),
+                lambda: mavutil.mavlink_connection(device, baud=baud, source_system=255),  # type: ignore[union-attr]
             )
             conn = self._conn
             if conn is None:
@@ -442,7 +442,7 @@ class MAVLinkTelemetryService:
 
     def _configure_streams(self, conn: Any) -> None:
         """Disable all streams, then enable only what we need at safe rates."""
-        m = mavutil.mavlink
+        m = mavutil.mavlink  # type: ignore[union-attr]
         for sid in _ALL_STREAM_IDS:
             try:
                 conn.mav.request_data_stream_send(
@@ -747,7 +747,7 @@ class MAVLinkTelemetryService:
         self._reader_paused = True
         try:
             with self._serial_lock:
-                m = mavutil.mavlink
+                m = mavutil.mavlink  # type: ignore[union-attr]
 
                 conn.mav.mission_count_send(
                     conn.target_system,
