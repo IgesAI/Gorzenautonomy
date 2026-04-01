@@ -204,6 +204,53 @@ async def download_from_drone(
     return result
 
 
+@router.post("/import/plan")
+async def import_qgc_plan_json(
+    plan_data: dict[str, Any],
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, Any]:
+    """Import a QGroundControl .plan JSON into the current mission.
+
+    Send the parsed .plan file content as the request body.
+    Replaces current waypoints with imported ones.
+    """
+    from gorzen.services.mission_export import import_qgc_plan
+
+    plan = import_qgc_plan(plan_data)
+
+    waypoints = [
+        Waypoint(
+            latitude_deg=wp.latitude_deg,
+            longitude_deg=wp.longitude_deg,
+            altitude_m=wp.altitude_m,
+            speed_ms=wp.speed_ms or 15.0,
+            loiter_time_s=wp.hold_time_s,
+            acceptance_radius_m=wp.acceptance_radius_m,
+        )
+        for wp in plan.waypoints
+    ]
+
+    analysis = mission_service.set_waypoints(waypoints)
+    await _persist_waypoints(session)
+    await audit_repo.record_event(
+        session,
+        event_type="mission.plan_imported",
+        payload={
+            "source": "qgc_plan",
+            "waypoint_count": len(waypoints),
+            "distance_m": plan.estimated_distance_m,
+        },
+    )
+
+    return {
+        "imported": True,
+        "waypoint_count": len(waypoints),
+        "estimated_distance_m": round(plan.estimated_distance_m, 1),
+        "estimated_duration_s": round(plan.estimated_duration_s, 1),
+        "analysis": analysis.__dict__,
+    }
+
+
 @router.get("/export/qgc")
 async def export_qgc() -> dict[str, Any]:
     """Export current mission as QGroundControl .plan JSON."""

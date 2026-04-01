@@ -270,11 +270,11 @@ export function AppShell({
             </ErrorBoundary>
           )}
 
-          {secondaryView === 'telemetry' && (
+          <div style={{ display: secondaryView === 'telemetry' ? 'contents' : 'none' }}>
             <ErrorBoundary fallback={<div className="h-full flex items-center justify-center text-red-400 text-sm p-6">Telemetry panel failed to load.</div>}>
               <LiveTelemetry onTelemetryUpdate={handleTelemetryUpdate} />
             </ErrorBoundary>
-          )}
+          </div>
 
           {secondaryView === 'logs' && (
             <ErrorBoundary fallback={<div className="h-full flex items-center justify-center text-red-400 text-sm p-6">Flight log analyzer failed to load.</div>}>

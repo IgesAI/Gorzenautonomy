@@ -147,15 +147,30 @@ export interface ModelChainResponse {
 }
 
 /** /telemetry responses */
+export type TelemetryLinkProfile = 'default' | 'low_bandwidth';
+
 export interface TelemetryStatus {
   connected: boolean;
   address?: string;
   system_id?: number;
+  link_profile?: TelemetryLinkProfile;
+  connection?: {
+    address: string;
+    link_profile: TelemetryLinkProfile;
+    uptime_s: number;
+    messages_received: number;
+  };
 }
 
 export interface TelemetrySnapshot {
   timestamp: number;
-  connection: { connected: boolean; address: string; uptime_s: number; messages_received: number };
+  connection: {
+    connected: boolean;
+    address: string;
+    link_profile: TelemetryLinkProfile;
+    uptime_s: number;
+    messages_received: number;
+  };
   position: { latitude_deg: number; longitude_deg: number; absolute_altitude_m: number; relative_altitude_m: number };
   attitude: { roll_deg: number; pitch_deg: number; yaw_deg: number };
   velocity: { groundspeed_ms: number; airspeed_ms: number; climb_rate_ms: number; velocity_north_ms: number; velocity_east_ms: number; velocity_down_ms: number };

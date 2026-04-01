@@ -12,6 +12,7 @@ import type {
   TerrainResponse,
   TelemetrySnapshot,
   TelemetryStatus,
+  TelemetryLinkProfile,
   TwinSchemaResponse,
   VehicleTwin,
   WaypointsResponse,
@@ -120,10 +121,13 @@ export const api = {
       }),
   },
   telemetry: {
-    connect: (address: string) =>
+    connect: (address: string, options?: { link_profile?: TelemetryLinkProfile }) =>
       request<TelemetryStatus>('/telemetry/connect', {
         method: 'POST',
-        body: JSON.stringify({ address }),
+        body: JSON.stringify({
+          address,
+          link_profile: options?.link_profile ?? 'default',
+        }),
       }),
     disconnect: () => request<{ status: string }>('/telemetry/disconnect', { method: 'POST' }),
     status: () => request<TelemetryStatus>('/telemetry/status'),
@@ -182,6 +186,21 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ log_id: logId, twin_id: twinId }),
       }),
+    syncParamsToFC: (params: Record<string, Record<string, unknown>>) =>
+      request<{ synced: number; failed: number; params: Record<string, boolean> }>(
+        '/telemetry/params/sync-to-fc',
+        { method: 'POST', body: JSON.stringify({ params }) },
+      ),
+    readParamsFromFC: () =>
+      request<{ fc_param_count: number; twin_params: Record<string, Record<string, unknown>>; subsystems_affected: string[] }>(
+        '/telemetry/params/read-from-fc',
+        { method: 'POST' },
+      ),
+    uploadGeofence: (polygon: number[][]) =>
+      request<{ success: boolean; vertices: number; message: string }>(
+        '/telemetry/geofence/upload',
+        { method: 'POST', body: JSON.stringify({ polygon }) },
+      ),
   },
   missionPlan: {
     getWaypoints: () => request<WaypointsResponse>('/mission-plan/waypoints'),
@@ -211,6 +230,11 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ address }),
       }),
+    importPlan: (planData: Record<string, unknown>) =>
+      request<{ imported: boolean; waypoint_count: number; estimated_distance_m: number; estimated_duration_s: number }>(
+        '/mission-plan/import/plan',
+        { method: 'POST', body: JSON.stringify(planData) },
+      ),
   },
   auth: {
     login: (username: string, password: string) => {

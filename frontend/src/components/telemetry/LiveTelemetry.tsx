@@ -3,7 +3,7 @@ import { GlassPanel } from '../layout/GlassPanel';
 import { chartStyles } from '../../theme/chartStyles';
 import { colors } from '../../theme/tokens';
 import { api } from '../../api/client';
-import type { TelemetrySnapshot, ParamMapping } from '../../types/api';
+import type { TelemetrySnapshot, ParamMapping, TelemetryLinkProfile } from '../../types/api';
 
 const GPS_FIX_LABELS: Record<string, string> = {
   '0': 'No GPS', '1': 'No Fix', '2': '2D Fix', '3': '3D Fix',
@@ -256,22 +256,36 @@ interface LiveTelemetryProps {
 export function LiveTelemetry({ onTelemetryUpdate }: LiveTelemetryProps) {
   const [snapshot, setSnapshot] = useState<TelemetrySnapshot | null>(null);
   const [connectionAddr, setConnectionAddr] = useState('serial://COM6:57600');
+  const [linkProfile, setLinkProfile] = useState<TelemetryLinkProfile>('default');
   const [connecting, setConnecting] = useState(false);
   const [connected, setConnected] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [paramMap, setParamMap] = useState<ParamMapping[]>([]);
   const [showParams, setShowParams] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fcSyncStatus, setFcSyncStatus] = useState<string | null>(null);
+  const [fcSyncing, setFcSyncing] = useState(false);
+  const [fcParams, setFcParams] = useState<Record<string, Record<string, unknown>> | null>(null);
   const [msgRate, setMsgRate] = useState(0);
   const prevMsgCount = useRef(0);
   const prevMsgTime = useRef(Date.now());
   const pollRef = useRef<number | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const connectedRef = useRef(false);
+  const startPollingRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    connectedRef.current = connected;
+  }, [connected]);
 
   const processSnapshot = useCallback((data: TelemetrySnapshot) => {
     setSnapshot(data);
-    setConnected(data.connection?.connected ?? false);
+    const isConn = data.connection?.connected ?? false;
+    setConnected(isConn);
+    if (isConn && data.connection?.link_profile) {
+      setLinkProfile(data.connection.link_profile);
+    }
     const now = Date.now();
     const dt = (now - prevMsgTime.current) / 1000;
     if (dt > 0.5) {
@@ -285,29 +299,47 @@ export function LiveTelemetry({ onTelemetryUpdate }: LiveTelemetryProps) {
     }
   }, [onTelemetryUpdate]);
 
-  const startWebSocket = useCallback(() => {
-    if (wsRef.current) return;
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/api/telemetry/ws`;
-    try {
-      const ws = new WebSocket(wsUrl);
-      ws.onmessage = (event) => {
-        try { processSnapshot(JSON.parse(event.data) as TelemetrySnapshot); } catch {}
-      };
-      ws.onerror = () => { ws.close(); wsRef.current = null; if (connected) startPolling(); };
-      ws.onclose = () => { wsRef.current = null; };
-      wsRef.current = ws;
-    } catch { startPolling(); }
-  }, [processSnapshot]);
-
   const startPolling = useCallback(() => {
     if (pollRef.current || wsRef.current) return;
+    const intervalMs = linkProfile === 'low_bandwidth' ? 1000 : 500;
     const poll = async () => {
       try { const data = await api.telemetry.snapshot(); processSnapshot(data); setError(null); }
       catch (e) { setError(e instanceof Error ? e.message : 'Telemetry fetch failed'); }
     };
     poll();
-    pollRef.current = window.setInterval(poll, 500);
+    pollRef.current = window.setInterval(poll, intervalMs);
+  }, [processSnapshot, linkProfile]);
+
+  useEffect(() => {
+    startPollingRef.current = startPolling;
+  }, [startPolling]);
+
+  const startWebSocket = useCallback(() => {
+    if (wsRef.current) return;
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/api/telemetry/ws`;
+    try {
+      const ws = new WebSocket(wsUrl);
+      ws.onopen = () => {
+        if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+      };
+      ws.onmessage = (event) => {
+        try { processSnapshot(JSON.parse(event.data) as TelemetrySnapshot); setError(null); } catch {}
+      };
+      ws.onerror = () => {
+        ws.close();
+      };
+      ws.onclose = () => {
+        wsRef.current = null;
+        setTimeout(() => {
+          if (!wsRef.current) startPollingRef.current();
+        }, 3000);
+      };
+      wsRef.current = ws;
+    } catch {
+      startPollingRef.current();
+    }
   }, [processSnapshot]);
 
   const stopAll = useCallback(() => {
@@ -321,8 +353,11 @@ export function LiveTelemetry({ onTelemetryUpdate }: LiveTelemetryProps) {
     abortRef.current = ac;
     setConnecting(true); setError(null);
     try {
-      const res = await api.telemetry.connect(connectionAddr);
+      const res = await api.telemetry.connect(connectionAddr, { link_profile: linkProfile });
       if (ac.signal.aborted) return;
+      if (res.link_profile === 'low_bandwidth' || res.link_profile === 'default') {
+        setLinkProfile(res.link_profile);
+      }
       setConnected(res.connected);
       if (res.connected) startWebSocket();
     } catch (e) {
@@ -351,14 +386,24 @@ export function LiveTelemetry({ onTelemetryUpdate }: LiveTelemetryProps) {
 
   useEffect(() => {
     api.telemetry.status().then(s => {
-      if (s.connected) { setConnected(true); startWebSocket(); }
+      if (s.connected) {
+        const lp = s.link_profile ?? s.connection?.link_profile;
+        if (lp === 'low_bandwidth' || lp === 'default') setLinkProfile(lp);
+        setConnected(true);
+        startWebSocket();
+      }
     }).catch(() => {});
     api.telemetry.paramMap().then(d => setParamMap(d.mappings || [])).catch(() => {});
     return () => {
       stopAll();
-      api.telemetry.disconnect().catch(() => {});
     };
   }, [startWebSocket, stopAll]);
+
+  useEffect(() => {
+    const handleUnload = () => { api.telemetry.disconnect().catch(() => {}); };
+    window.addEventListener('beforeunload', handleUnload);
+    return () => window.removeEventListener('beforeunload', handleUnload);
+  }, []);
 
   const s = snapshot;
   const battPct = s?.battery.remaining_pct ?? 0;
@@ -391,6 +436,12 @@ export function LiveTelemetry({ onTelemetryUpdate }: LiveTelemetryProps) {
             </div>
           )}
         </div>
+        {connected && linkProfile === 'low_bandwidth' && (
+          <div className="flex items-center gap-2 text-[9px] font-mono text-amber-400/70">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400/60" />
+            LoRa mode — low-bandwidth rates auto-selected for serial link
+          </div>
+        )}
         <div className="flex gap-2 items-end">
           <div className="flex-1">
             <input type="text" value={connectionAddr} onChange={e => setConnectionAddr(e.target.value)}
@@ -567,14 +618,75 @@ export function LiveTelemetry({ onTelemetryUpdate }: LiveTelemetryProps) {
         </>
       )}
 
-      {/* PX4 Parameter Map */}
+      {/* PX4 Parameter Map + FC Sync */}
       <GlassPanel padding="p-3">
         <div className="flex items-center justify-between">
-          <span className="text-[8px] uppercase tracking-widest text-white/30">PARAMETER MAP</span>
-          <button onClick={() => setShowParams(!showParams)} className="glass-button text-[9px] py-1 px-2 font-mono">
-            {showParams ? 'HIDE' : `SHOW (${paramMap.length})`}
-          </button>
+          <span className="text-[8px] uppercase tracking-widest text-white/30">FC PARAMETERS</span>
+          <div className="flex items-center gap-1.5">
+            {connected && (
+              <>
+                <button
+                  disabled={fcSyncing}
+                  onClick={async () => {
+                    setFcSyncing(true); setFcSyncStatus('Reading FC params…');
+                    try {
+                      const res = await api.telemetry.readParamsFromFC();
+                      setFcParams(res.twin_params);
+                      setFcSyncStatus(`Read ${res.fc_param_count} params — ${res.subsystems_affected.join(', ')}`);
+                      setError(null);
+                    } catch (e) {
+                      setFcSyncStatus(null);
+                      setError(e instanceof Error ? e.message : 'Read failed');
+                    } finally { setFcSyncing(false); }
+                  }}
+                  className="glass-button text-[8px] py-0.5 px-2 font-mono text-cyan-400 border-cyan-500/20 disabled:opacity-40"
+                >
+                  {fcSyncing ? '…' : 'READ FC'}
+                </button>
+                <button
+                  disabled={fcSyncing}
+                  onClick={async () => {
+                    setFcSyncing(true); setFcSyncStatus('Writing params to FC…');
+                    try {
+                      const res = await api.telemetry.syncParamsToFC(fcParams ?? {});
+                      setFcSyncStatus(`Synced ${res.synced} params to FC` + (res.failed > 0 ? ` (${res.failed} failed)` : ''));
+                      setError(null);
+                    } catch (e) {
+                      setFcSyncStatus(null);
+                      setError(e instanceof Error ? e.message : 'Sync failed');
+                    } finally { setFcSyncing(false); }
+                  }}
+                  className="glass-button text-[8px] py-0.5 px-2 font-mono text-amber-400 border-amber-500/20 disabled:opacity-40"
+                >
+                  {fcSyncing ? '…' : 'SYNC TO FC'}
+                </button>
+              </>
+            )}
+            <button onClick={() => setShowParams(!showParams)} className="glass-button text-[9px] py-1 px-2 font-mono">
+              {showParams ? 'HIDE' : `SHOW (${paramMap.length})`}
+            </button>
+          </div>
         </div>
+        {fcSyncStatus && (
+          <div className="mt-1.5 p-1.5 rounded-lg bg-white/[0.03] border border-white/[0.06] text-[9px] font-mono text-white/50">
+            {fcSyncStatus}
+          </div>
+        )}
+        {fcParams && (
+          <div className="mt-1.5 space-y-0.5 max-h-40 overflow-y-auto">
+            {Object.entries(fcParams).map(([subsystem, params]) => (
+              <div key={subsystem}>
+                <span className="text-[8px] uppercase tracking-wider text-white/25">{subsystem}</span>
+                {Object.entries(params as Record<string, unknown>).map(([k, v]) => (
+                  <div key={k} className="flex items-center justify-between py-0.5 px-1.5">
+                    <span className="text-[9px] font-mono text-white/50">{k}</span>
+                    <span className="text-[9px] font-mono text-emerald-400/70">{typeof v === 'number' ? v.toFixed(3) : String(v)}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
         {showParams && (
           <div className="mt-2 space-y-0.5 max-h-60 overflow-y-auto">
             {paramMap.map((m, i) => (

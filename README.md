@@ -61,6 +61,8 @@ pip install pyserial
 pip install -e .
 ```
 
+For **LoRa or other low-rate packet links**, use the Live tab checkbox *LoRa / low bandwidth* before connecting (or `POST /api/telemetry/connect` with `"link_profile": "low_bandwidth"`). That requests only essential MAVLink streams at 1&nbsp;Hz and slows server push / HTTP polling so the UI does not outrun the radio.
+
 ## Testing
 
 ```bash

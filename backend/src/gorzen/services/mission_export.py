@@ -150,6 +150,91 @@ def export_px4_mission(plan: MissionPlan) -> list[dict[str, Any]]:
     return items
 
 
+def import_qgc_plan(plan_data: dict[str, Any]) -> MissionPlan:
+    """Import a QGroundControl .plan JSON into a Gorzen MissionPlan.
+
+    Reference: https://dev.qgroundcontrol.com/master/en/file_formats/plan.html
+
+    Handles the ``mission.items`` array, mapping MAVLink command IDs back to
+    internal WaypointType values.
+    """
+    mission = plan_data.get("mission", {})
+    items = mission.get("items", [])
+
+    waypoints: list[Waypoint] = []
+    for i, item in enumerate(items):
+        if item.get("type") != "SimpleItem":
+            continue
+
+        cmd = item.get("command", 16)
+        params = item.get("params", [0, 0, 0, 0, 0, 0, 0])
+
+        lat = params[4] if len(params) > 4 else 0.0
+        lon = params[5] if len(params) > 5 else 0.0
+        alt = params[6] if len(params) > 6 else 0.0
+        hold = params[0] if len(params) > 0 else 0.0
+        radius = params[1] if len(params) > 1 else 2.0
+
+        import math
+
+        if isinstance(lat, float) and math.isnan(lat):
+            lat = 0.0
+        if isinstance(lon, float) and math.isnan(lon):
+            lon = 0.0
+        if isinstance(alt, float) and math.isnan(alt):
+            alt = 0.0
+        if isinstance(hold, float) and math.isnan(hold):
+            hold = 0.0
+        if isinstance(radius, float) and math.isnan(radius):
+            radius = 2.0
+
+        wp_type = _mav_cmd_to_wp_type(cmd)
+
+        waypoints.append(
+            Waypoint(
+                sequence=i,
+                wp_type=wp_type,
+                latitude_deg=lat,
+                longitude_deg=lon,
+                altitude_m=alt,
+                speed_ms=mission.get("cruiseSpeed", 10.0),
+                hold_time_s=hold,
+                acceptance_radius_m=radius,
+            )
+        )
+
+    plan = MissionPlan(twin_id="imported", waypoints=waypoints)
+
+    if waypoints:
+        from gorzen.services.mission_planner import haversine_m
+
+        total_dist = 0.0
+        for j in range(1, len(waypoints)):
+            total_dist += haversine_m(
+                waypoints[j - 1].latitude_deg,
+                waypoints[j - 1].longitude_deg,
+                waypoints[j].latitude_deg,
+                waypoints[j].longitude_deg,
+            )
+        plan.estimated_distance_m = total_dist
+        cruise = mission.get("cruiseSpeed", 10.0)
+        if cruise > 0:
+            plan.estimated_duration_s = total_dist / cruise
+
+    return plan
+
+
+def _mav_cmd_to_wp_type(cmd: int) -> WaypointType:
+    """Map MAVLink command ID back to internal waypoint type."""
+    return {
+        22: WaypointType.TAKEOFF,
+        16: WaypointType.NAVIGATE,
+        17: WaypointType.LOITER,
+        20: WaypointType.RETURN_TO_LAUNCH,
+        21: WaypointType.LAND,
+    }.get(cmd, WaypointType.NAVIGATE)
+
+
 def _wp_type_to_mav_cmd(wp_type: WaypointType) -> int:
     """Map internal waypoint type to MAVLink command ID."""
     return {

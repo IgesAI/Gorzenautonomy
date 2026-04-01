@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import (
     APIRouter,
@@ -59,16 +59,18 @@ internal_router = APIRouter()
 
 class ConnectRequest(BaseModel):
     address: str = "udp://:14540"
+    link_profile: Literal["default", "low_bandwidth"] = "default"
 
 
 @router.post("/connect")
 async def connect_drone(request: ConnectRequest) -> dict[str, Any]:
-    """Connect to a PX4 drone or SITL instance."""
-    success = await telemetry_service.connect(request.address)
+    """Connect to a PX4/ArduPilot link. Use ``low_bandwidth`` for LoRa or other low-rate telemetry."""
+    success = await telemetry_service.connect(request.address, request.link_profile)
     hint = telemetry_service.last_connect_hint
     return {
         "connected": success,
         "address": request.address,
+        "link_profile": request.link_profile,
         "message": "Connected successfully"
         if success
         else "Connection failed — check address and drone status",
@@ -90,6 +92,7 @@ async def get_connection_status() -> dict[str, Any]:
         "connected": telemetry_service.is_connected,
         "connection": {
             "address": telemetry_service.connection.address,
+            "link_profile": telemetry_service.connection.link_profile,
             "uptime_s": round(telemetry_service.connection.uptime_s, 1),
             "messages_received": telemetry_service.connection.messages_received,
         },
@@ -171,7 +174,13 @@ async def ingest_bridge_telemetry(payload: BridgeIngestPayload) -> dict[str, str
 
 @ws_router.websocket("/ws")
 async def telemetry_websocket(ws: WebSocket) -> None:
-    """WebSocket endpoint for live telemetry streaming at ~10 Hz."""
+    """QGC-style WebSocket: polls get_snapshot() directly at 20 Hz.
+
+    No queue, no event, no push loop — the reader thread writes to
+    ``_frame`` and we read from it.  Only sends when new data has
+    arrived (``messages_received`` changed) so idle connections don't
+    burn bandwidth.  Stays open indefinitely.
+    """
     if settings.auth_enabled:
         token = ws.query_params.get("token")
         if not token:
@@ -183,15 +192,19 @@ async def telemetry_websocket(ws: WebSocket) -> None:
             await ws.close(code=4401)
             return
     await ws.accept()
-    q = telemetry_service.subscribe()
+    last_count = -1
     try:
         while True:
-            await asyncio.wait_for(q.get(), timeout=5.0)
-            await ws.send_json(telemetry_service.get_snapshot())
-    except (WebSocketDisconnect, asyncio.TimeoutError):
+            snap = telemetry_service.get_snapshot()
+            count = snap["connection"]["messages_received"]
+            if count != last_count:
+                await ws.send_json(snap)
+                last_count = count
+            else:
+                await ws.send_json(snap)
+            await asyncio.sleep(0.05)
+    except WebSocketDisconnect:
         pass
-    finally:
-        telemetry_service.unsubscribe(q)
 
 
 # --- PX4 Parameter Mapping ---
@@ -232,6 +245,99 @@ async def convert_px4_to_twin(request: PX4ParamsRequest) -> dict[str, Any]:
     return {
         "twin_params": twin_params,
         "subsystems_affected": list(twin_params.keys()),
+    }
+
+
+# --- FC Parameter Sync (QGC-style write-back) ---
+
+
+class SyncToFCRequest(BaseModel):
+    params: dict[str, dict[str, Any]]
+
+
+@router.post("/params/sync-to-fc")
+async def sync_params_to_fc(request: SyncToFCRequest) -> dict[str, Any]:
+    """Write twin parameters to the flight controller.
+
+    Converts twin params to PX4 values, then sends PARAM_SET for each.
+    Requires an active telemetry connection.
+    """
+    if not telemetry_service.is_connected:
+        raise HTTPException(400, "No active telemetry connection")
+
+    px4_params = twin_to_px4(request.params)
+    if not px4_params:
+        return {"synced": 0, "failed": 0, "params": {}}
+
+    import asyncio
+
+    loop = asyncio.get_running_loop()
+    results: dict[str, bool] = {}
+    for name, value in px4_params.items():
+        ok = await loop.run_in_executor(
+            None,
+            lambda n=name, v=float(value): telemetry_service.write_param(n, v),
+        )
+        results[name] = ok
+
+    synced = sum(1 for v in results.values() if v)
+    return {
+        "synced": synced,
+        "failed": len(results) - synced,
+        "params": results,
+    }
+
+
+@router.post("/params/read-from-fc")
+async def read_params_from_fc() -> dict[str, Any]:
+    """Read all parameters from the FC and return as twin params.
+
+    Requires an active telemetry connection.
+    """
+    if not telemetry_service.is_connected:
+        raise HTTPException(400, "No active telemetry connection")
+
+    import asyncio
+
+    loop = asyncio.get_running_loop()
+    fc_params = await loop.run_in_executor(None, telemetry_service.read_all_params)
+
+    twin_params = px4_to_twin(fc_params)
+    return {
+        "fc_param_count": len(fc_params),
+        "twin_params": twin_params,
+        "subsystems_affected": list(twin_params.keys()),
+    }
+
+
+class GeofenceUploadRequest(BaseModel):
+    polygon: list[list[float]]
+
+
+@router.post("/geofence/upload")
+async def upload_geofence(request: GeofenceUploadRequest) -> dict[str, Any]:
+    """Upload a geofence polygon to the flight controller via MAVLink.
+
+    polygon: list of [lat, lon] pairs forming the fence boundary.
+    Requires an active telemetry connection.
+    """
+    if not telemetry_service.is_connected:
+        raise HTTPException(400, "No active telemetry connection")
+    if len(request.polygon) < 3:
+        raise HTTPException(400, "Geofence requires at least 3 vertices")
+
+    import asyncio
+
+    loop = asyncio.get_running_loop()
+    fence_tuples = [(p[0], p[1]) for p in request.polygon]
+    ok = await loop.run_in_executor(
+        None,
+        lambda: telemetry_service.upload_geofence(fence_tuples),
+    )
+    return {
+        "success": ok,
+        "vertices": len(request.polygon),
+        "message": "Geofence uploaded to FC" if ok else "Geofence upload failed",
     }
 
 
