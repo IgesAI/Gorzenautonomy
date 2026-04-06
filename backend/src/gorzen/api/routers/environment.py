@@ -1,11 +1,10 @@
 """Environment intelligence endpoints: weather, terrain, solar, NIIRS."""
 
-from __future__ import annotations
-
+import math
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel
+from fastapi import APIRouter, Body, HTTPException, Query, Request
+from pydantic import BaseModel, Field, field_validator
 
 from gorzen.api.limiter import limiter
 from gorzen.config import settings
@@ -53,7 +52,32 @@ class TerrainRequest(BaseModel):
 
 
 class TerrainProfileRequest(BaseModel):
-    points: list[list[float]]  # [[lat, lon], ...]
+    """POST body: ``points`` is ``[[lat, lon], ...]``. Coerced from messy client JSON (e.g. nulls from NaN)."""
+
+    points: list[list[float]] = Field(default_factory=list)
+
+    @field_validator("points", mode="before")
+    @classmethod
+    def _normalize_points(cls, v: object) -> list[list[float]]:
+        if v is None:
+            return []
+        if not isinstance(v, list):
+            return []
+        out: list[list[float]] = []
+        for item in v:
+            if not isinstance(item, (list, tuple)) or len(item) < 2:
+                continue
+            try:
+                lat = float(item[0])
+                lon = float(item[1])
+            except (TypeError, ValueError):
+                continue
+            if not math.isfinite(lat) or not math.isfinite(lon):
+                continue
+            if not -90.0 <= lat <= 90.0 or not -180.0 <= lon <= 180.0:
+                continue
+            out.append([lat, lon])
+        return out
 
 
 class ModelChainPoint(BaseModel):
@@ -161,10 +185,11 @@ async def get_terrain_elevation(
 @router.post("/terrain/profile")
 @limiter.limit(_env_rate_limit())
 async def get_terrain_profile(
-    http_request: Request, request: TerrainProfileRequest
+    request: Request,
+    payload: TerrainProfileRequest = Body(...),
 ) -> dict[str, Any]:
     """Fetch terrain elevation profile along a path."""
-    points = [(p[0], p[1]) for p in request.points if len(p) >= 2]
+    points = [(p[0], p[1]) for p in payload.points if len(p) >= 2]
     if not points:
         raise HTTPException(status_code=400, detail="No valid points")
     for lat, lon in points:
@@ -215,7 +240,7 @@ async def get_niirs_level_detail(level: float) -> dict[str, Any]:
 
 
 @router.post("/model-chain")
-async def get_model_chain_point(request: ModelChainPoint) -> dict[str, Any]:
+async def get_model_chain_point(body: ModelChainPoint) -> dict[str, Any]:
     """Evaluate the full 17-model chain at a single operating point.
 
     Returns all intermediate values from every model for visualization.
@@ -226,7 +251,7 @@ async def get_model_chain_point(request: ModelChainPoint) -> dict[str, Any]:
     twin = VehicleTwin()
     params = _extract_params(twin)
 
-    values = evaluate_point(params, request.speed_ms, request.altitude_m)
+    values = evaluate_point(params, body.speed_ms, body.altitude_m)
 
     # Group outputs by model stage
     stages = {
@@ -335,8 +360,8 @@ async def get_model_chain_point(request: ModelChainPoint) -> dict[str, Any]:
     niirs_info = get_niirs_level(niirs)
 
     return {
-        "speed_ms": request.speed_ms,
-        "altitude_m": request.altitude_m,
+        "speed_ms": body.speed_ms,
+        "altitude_m": body.altitude_m,
         "stages": stages,
         "niirs_interpretation": {
             "level": niirs_info.level,
@@ -361,7 +386,7 @@ class ModelRecommendationRequest(BaseModel):
 
 
 @router.post("/model-recommendation")
-async def model_recommendation(request: ModelRecommendationRequest) -> dict[str, Any]:
+async def model_recommendation(body: ModelRecommendationRequest) -> dict[str, Any]:
     """Recommend optimal VLM/CV model based on image quality and operational constraints."""
     mode_map = {
         "onboard": DeploymentMode.ONBOARD,
@@ -370,19 +395,19 @@ async def model_recommendation(request: ModelRecommendationRequest) -> dict[str,
         "rtn": DeploymentMode.CLOUD,
         "both": DeploymentMode.EITHER,
     }
-    deploy_mode = mode_map.get(request.deployment_mode, DeploymentMode.EITHER)
+    deploy_mode = mode_map.get(body.deployment_mode, DeploymentMode.EITHER)
 
     defect_map = {dc.value: dc for dc in DefectClass}
-    defect_classes = [defect_map.get(d, DefectClass.GENERIC) for d in request.defect_classes]
+    defect_classes = [defect_map.get(d, DefectClass.GENERIC) for d in body.defect_classes]
 
     rec = recommend_model(
-        gsd_cm=request.gsd_cm,
-        niirs=request.niirs,
-        pixels_on_target=request.pixels_on_target,
+        gsd_cm=body.gsd_cm,
+        niirs=body.niirs,
+        pixels_on_target=body.pixels_on_target,
         deployment_mode=deploy_mode,
-        latency_budget_ms=request.latency_budget_ms,
+        latency_budget_ms=body.latency_budget_ms,
         defect_classes=defect_classes,
-        bandwidth_mbps=request.bandwidth_mbps,
+        bandwidth_mbps=body.bandwidth_mbps,
     )
 
     result: dict[str, Any] = {

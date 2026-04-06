@@ -1,12 +1,14 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   Trash2, Upload, Download, RotateCcw, Navigation, Crosshair, MapPin,
   Wind, Thermometer, ChevronDown, ChevronRight, Home, Shield, Camera,
-  Battery, Mountain,
+  Battery, Mountain, ImageDown, ClipboardCheck,
 } from 'lucide-react';
 import { CesiumGlobe } from './CesiumGlobe';
-import type { GlobeWaypoint, WeatherOverlay } from './CesiumGlobe';
+import type { GlobeWaypoint, WeatherOverlay, CesiumViewerApi } from './CesiumGlobe';
 import { api } from '../../api/client';
+import type { MissionValidateResponse } from '../../types/api';
+import { haversineMeters } from '../../utils/geo';
 
 interface MissionAnalysis {
   total_distance_m: number;
@@ -24,12 +26,26 @@ interface TerrainPoint { latitude: number; longitude: number; elevation_m: numbe
 
 const CAMERA_ACTIONS = ['none', 'photo', 'start_video', 'stop_video'] as const;
 
+/** Optional perception / overlap fields for server-side pre-flight validation */
+export interface MissionPlannerConfig {
+  nominal_altitude_m: number;
+  nominal_speed_ms: number;
+  min_endurance_min: number;
+  target_size_m?: number;
+  min_pixels_on_target?: number;
+  max_gsd_cm_px?: number;
+  exposure_time_s?: number;
+  max_blur_px?: number;
+  min_overlap_pct?: number;
+  trigger_interval_m?: number;
+}
+
 interface MissionPlannerProps {
   sharedLocation?: { lat: number; lon: number } | null;
   /** Twin used for physics-based endurance preview (``default`` = unsaved template). */
   twinId?: string;
   /** Mission config from sidebar editor — seeds default altitude, speed, endurance */
-  missionConfig?: { nominal_altitude_m: number; nominal_speed_ms: number; min_endurance_min: number } | null;
+  missionConfig?: MissionPlannerConfig | null;
 }
 
 export function MissionPlanner({ sharedLocation, twinId = 'default', missionConfig }: MissionPlannerProps) {
@@ -46,7 +62,13 @@ export function MissionPlanner({ sharedLocation, twinId = 'default', missionConf
   const [terrainProfile, setTerrainProfile] = useState<TerrainPoint[] | null>(null);
   const [terrainLoading, setTerrainLoading] = useState(false);
   const [enduranceMinutes, setEnduranceMinutes] = useState(missionConfig?.min_endurance_min ?? 25);
+  const [geoFixState, setGeoFixState] = useState<'idle' | 'loading' | 'ok' | 'no_fix' | 'unsupported'>('idle');
+  const [telemetryConnected, setTelemetryConnected] = useState(false);
+  const [groundSpeedMs, setGroundSpeedMs] = useState<number | null>(null);
+  const [serverValidation, setServerValidation] = useState<MissionValidateResponse | null>(null);
+  const [validationLoading, setValidationLoading] = useState(false);
   const flyToMeRef = useRef<(() => void) | null>(null);
+  const captureScreenshotRef = useRef<(() => string | undefined) | null>(null);
 
   useEffect(() => {
     if (missionConfig) {
@@ -57,14 +79,34 @@ export function MissionPlanner({ sharedLocation, twinId = 'default', missionConf
   }, [missionConfig]);
 
   useEffect(() => {
+    let cancelled = false;
     if (sharedLocation) {
       setHomePosition(sharedLocation);
-    } else if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => setHomePosition({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
-        () => setHomePosition({ lat: 35.0, lon: -106.6 }),
-      );
+      setGeoFixState('ok');
+      return;
     }
+    if (!navigator.geolocation) {
+      setHomePosition(null);
+      setGeoFixState('unsupported');
+      return;
+    }
+    setGeoFixState('loading');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        if (cancelled) return;
+        setHomePosition({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+        setGeoFixState('ok');
+      },
+      () => {
+        if (cancelled) return;
+        setHomePosition(null);
+        setGeoFixState('no_fix');
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+    return () => {
+      cancelled = true;
+    };
   }, [sharedLocation]);
 
   useEffect(() => {
@@ -131,15 +173,23 @@ export function MissionPlanner({ sharedLocation, twinId = 'default', missionConf
           const snap = JSON.parse(ev.data as string) as {
             position?: { latitude_deg: number; longitude_deg: number; relative_altitude_m?: number };
             connection?: { connected?: boolean };
+            velocity?: { groundspeed_ms?: number };
           };
           const pos = snap?.position;
           const conn = snap?.connection;
-          if (conn?.connected && pos) {
+          const connected = conn?.connected === true;
+          setTelemetryConnected(connected);
+          if (connected && pos) {
             setDronePosition({
               lat: pos.latitude_deg,
               lon: pos.longitude_deg,
               alt: pos.relative_altitude_m ?? 0,
             });
+            const gs = snap.velocity?.groundspeed_ms;
+            setGroundSpeedMs(typeof gs === 'number' && Number.isFinite(gs) ? gs : null);
+          } else {
+            setDronePosition(null);
+            setGroundSpeedMs(null);
           }
         } catch {
           /* ignore */
@@ -159,6 +209,38 @@ export function MissionPlanner({ sharedLocation, twinId = 'default', missionConf
       if (reconnect) clearTimeout(reconnect);
       ws?.close();
     };
+  }, []);
+
+  const telemetryHud = useMemo(() => {
+    if (!dronePosition || waypoints.length === 0) return null;
+    let bestI = 0;
+    let bestD = Infinity;
+    for (let i = 0; i < waypoints.length; i++) {
+      const d = haversineMeters(
+        { lat: dronePosition.lat, lon: dronePosition.lon },
+        { lat: waypoints[i].latitude_deg, lon: waypoints[i].longitude_deg },
+      );
+      if (d < bestD) {
+        bestD = d;
+        bestI = i;
+      }
+    }
+    const etaS =
+      groundSpeedMs != null && groundSpeedMs > 0.5 ? bestD / groundSpeedMs : null;
+    return { nearestOrder: waypoints[bestI].order, distM: bestD, etaS };
+  }, [dronePosition, waypoints, groundSpeedMs]);
+
+  const onViewerReady = useCallback((api: CesiumViewerApi) => {
+    captureScreenshotRef.current = api.captureScreenshot;
+  }, []);
+
+  const handleCapturePng = useCallback(() => {
+    const data = captureScreenshotRef.current?.();
+    if (!data) return;
+    const a = document.createElement('a');
+    a.href = data;
+    a.download = `gorzen-mission-${Date.now()}.png`;
+    a.click();
   }, []);
 
   useEffect(() => {
@@ -188,7 +270,15 @@ export function MissionPlanner({ sharedLocation, twinId = 'default', missionConf
           ]);
         }
       }
-      const res = await api.environment.terrainProfile(points);
+      const clean = points.filter(
+        (p) => p.length >= 2 && p.every((x) => typeof x === 'number' && Number.isFinite(x)),
+      );
+      if (clean.length < 2) {
+        setTerrainProfile(null);
+        setTerrainLoading(false);
+        return;
+      }
+      const res = await api.environment.terrainProfile(clean);
       setTerrainProfile(res.points ?? []);
     } catch {
       setTerrainProfile(null);
@@ -285,6 +375,87 @@ export function MissionPlanner({ sharedLocation, twinId = 'default', missionConf
     setTimeout(() => setStatus(null), 4000);
   }, [fetchTerrainProfile]);
 
+  const handleServerValidate = useCallback(async () => {
+    if (waypoints.length === 0) {
+      setStatus('Add waypoints before validating');
+      setTimeout(() => setStatus(null), 3000);
+      return;
+    }
+    setValidationLoading(true);
+    setServerValidation(null);
+    try {
+      let twinParams: Record<string, unknown> = {};
+      if (twinId !== 'default') {
+        try {
+          const twin = await api.twins.get(twinId);
+          twinParams = twin as unknown as Record<string, unknown>;
+        } catch {
+          twinParams = {};
+        }
+      }
+      const env =
+        weather != null
+          ? {
+              temperature_c: weather.temperature_c,
+              pressure_hpa: weather.pressure_hpa,
+              wind_speed_ms: weather.wind_speed_ms,
+              wind_direction_deg: weather.wind_direction_deg,
+              density_altitude_ft: weather.density_altitude_ft,
+            }
+          : undefined;
+      let geofence: [number, number][] | undefined;
+      if (geofenceRadius > 0 && homePosition) {
+        const n = 12;
+        const rM = geofenceRadius;
+        const lat0 = homePosition.lat;
+        const lon0 = homePosition.lon;
+        const dLat = rM / 111320;
+        const cosLat = Math.cos((lat0 * Math.PI) / 180);
+        const dLon = cosLat > 1e-6 ? rM / (111320 * cosLat) : dLat;
+        geofence = Array.from({ length: n }, (_, i) => {
+          const a = (2 * Math.PI * i) / n;
+          return [lat0 + dLat * Math.sin(a), lon0 + dLon * Math.cos(a)] as [number, number];
+        });
+      }
+      let terrainElevations: number[] | undefined;
+      if (terrainProfile && terrainProfile.length > 0) {
+        terrainElevations = waypoints.map((_, i) => {
+          const t = waypoints.length === 1 ? 0 : i / (waypoints.length - 1);
+          const idx = Math.round(t * (terrainProfile.length - 1));
+          return terrainProfile[idx]?.elevation_m ?? 0;
+        });
+      }
+      const res = await api.missionPlan.validate({
+        twin_id: twinId,
+        twin_params: twinParams,
+        environment: env,
+        geofence,
+        terrain_elevations_m: terrainElevations,
+        target_size_m: missionConfig?.target_size_m,
+        min_pixels_on_target: missionConfig?.min_pixels_on_target,
+        max_gsd_cm_px: missionConfig?.max_gsd_cm_px,
+        exposure_time_s: missionConfig?.exposure_time_s,
+        max_blur_px: missionConfig?.max_blur_px,
+        min_overlap_pct: missionConfig?.min_overlap_pct,
+        trigger_interval_m: missionConfig?.trigger_interval_m,
+      });
+      setServerValidation(res);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Validation failed';
+      setStatus(msg);
+      setTimeout(() => setStatus(null), 5000);
+    }
+    setValidationLoading(false);
+  }, [
+    waypoints,
+    twinId,
+    weather,
+    geofenceRadius,
+    homePosition,
+    terrainProfile,
+    missionConfig,
+  ]);
+
   // --- Terrain profile SVG ---
   const renderTerrainProfile = () => {
     if (!terrainProfile || terrainProfile.length < 2 || waypoints.length < 2) return null;
@@ -354,12 +525,16 @@ export function MissionPlanner({ sharedLocation, twinId = 'default', missionConf
           onFlyTo={(fn) => { flyToMeRef.current = fn; }}
           homePosition={homePosition}
           geofenceRadius={geofenceRadius}
+          defaultAddAltitude={defaultAlt}
+          legDistancesM={analysis?.leg_distances_m ?? null}
+          onViewerReady={onViewerReady}
         />
 
         {/* Overlay controls */}
         <div className="absolute top-3 left-3 flex gap-2 flex-wrap">
           <div className="glass-panel p-2 flex gap-1.5 flex-wrap">
-            <button onClick={() => flyToMeRef.current?.()} className="glass-button px-2.5 py-1.5 text-[11px] flex items-center gap-1.5" title="Fly to my location">
+            <button onClick={() => flyToMeRef.current?.()} disabled={!homePosition}
+              className="glass-button px-2.5 py-1.5 text-[11px] flex items-center gap-1.5 disabled:opacity-50" title="Fly to my location">
               <Crosshair size={12} /> My Loc
             </button>
             <button onClick={handleAddRTL} className="glass-button px-2.5 py-1.5 text-[11px] flex items-center gap-1.5" title="Add return-to-launch waypoint"
@@ -374,6 +549,13 @@ export function MissionPlanner({ sharedLocation, twinId = 'default', missionConf
             </button>
             <button onClick={handleDownloadFromDrone} className="glass-button px-2.5 py-1.5 text-[11px] flex items-center gap-1.5" title="Download from drone">
               <Download size={12} /> Download
+            </button>
+            <button type="button" onClick={handleCapturePng} className="glass-button px-2.5 py-1.5 text-[11px] flex items-center gap-1.5" title="Save globe view as PNG">
+              <ImageDown size={12} /> Capture
+            </button>
+            <button type="button" onClick={() => void handleServerValidate()} disabled={validationLoading || waypoints.length === 0}
+              className="glass-button px-2.5 py-1.5 text-[11px] flex items-center gap-1.5 disabled:opacity-50" title="Run server pre-flight validation">
+              <ClipboardCheck size={12} /> Validate
             </button>
           </div>
         </div>
@@ -423,6 +605,34 @@ export function MissionPlanner({ sharedLocation, twinId = 'default', missionConf
           </div>
         )}
 
+        {telemetryConnected && dronePosition && (
+          <div className="absolute top-14 right-3 glass-panel p-2.5 text-[10px] font-mono text-white/70 min-w-[168px] z-10">
+            <div className="text-[9px] font-semibold uppercase tracking-wider text-white/35 mb-1.5">Telemetry</div>
+            <div className="flex justify-between gap-4">
+              <span className="text-white/40">GS</span>
+              <span>{groundSpeedMs != null ? `${groundSpeedMs.toFixed(1)} m/s` : '—'}</span>
+            </div>
+            {telemetryHud && (
+              <>
+                <div className="flex justify-between gap-4 mt-0.5">
+                  <span className="text-white/40">Near WP</span>
+                  <span>#{telemetryHud.nearestOrder}</span>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <span className="text-white/40">Dist</span>
+                  <span>{telemetryHud.distM.toFixed(0)} m</span>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <span className="text-white/40">ETA</span>
+                  <span>
+                    {telemetryHud.etaS != null ? `${(telemetryHud.etaS / 60).toFixed(1)} min` : '—'}
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         {/* Status toast */}
         {status && (
           <div className="absolute top-3 right-3 glass-panel p-3 text-xs text-white/80 animate-pulse">
@@ -457,26 +667,75 @@ export function MissionPlanner({ sharedLocation, twinId = 'default', missionConf
           </div>
         </div>
 
-        {/* GPS Location */}
-        {homePosition && (
-          <div className="p-4 border-b border-white/[0.06]">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-white/40 mb-2 flex items-center gap-1.5">
-              <MapPin size={11} className="text-cyan-400" /> Your Location
+        {/* Server pre-flight validation */}
+        <div className="p-4 border-b border-white/[0.06]">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-white/40 flex items-center gap-1.5">
+              <ClipboardCheck size={11} className="text-emerald-400" /> Pre-flight (server)
             </h3>
-            <div className="space-y-1 font-mono text-[10px] text-white/50">
-              <div className="flex justify-between">
-                <span className="text-white/30">Lat</span><span>{homePosition.lat.toFixed(6)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-white/30">Lon</span><span>{homePosition.lon.toFixed(6)}</span>
-              </div>
-            </div>
-            <div className="mt-1.5 flex items-center gap-1.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-              <span className="text-[9px] text-cyan-400/60">GPS active</span>
-            </div>
+            <button type="button" onClick={() => void handleServerValidate()} disabled={validationLoading || waypoints.length === 0}
+              className="text-[10px] px-2 py-1 rounded bg-white/[0.06] hover:bg-white/[0.1] text-white/70 disabled:opacity-40">
+              {validationLoading ? '…' : 'Run'}
+            </button>
           </div>
-        )}
+          <p className="text-[9px] text-white/30 mb-2 leading-relaxed">
+            Uses POST /mission-plan/validate with twin params{ twinId === 'default' ? ' (default twin: empty params)' : '' }, weather, fence, and terrain samples.
+          </p>
+          {serverValidation && (
+            <div className="space-y-2">
+              <div className={`text-[10px] font-semibold ${serverValidation.is_valid ? 'text-emerald-400' : 'text-amber-400'}`}>
+                {serverValidation.is_valid ? 'PASSED' : 'FAILED'} — {serverValidation.checks.length} check(s)
+              </div>
+              {serverValidation.warnings.length > 0 && (
+                <ul className="text-[9px] text-amber-400/90 space-y-0.5 list-disc list-inside">
+                  {serverValidation.warnings.map((w, i) => (
+                    <li key={i}>{w}</li>
+                  ))}
+                </ul>
+              )}
+              <div className="max-h-48 overflow-y-auto space-y-1 border border-white/[0.06] rounded p-2 bg-black/20">
+                {serverValidation.checks.map((c, i) => (
+                  <div key={i} className="text-[9px] font-mono border-b border-white/[0.04] pb-1 last:border-0">
+                    <div className="flex justify-between gap-2">
+                      <span className={c.passed ? 'text-emerald-400/90' : 'text-red-400/90'}>{c.passed ? 'OK' : 'NO'}</span>
+                      <span className="text-white/50 truncate">{c.name}</span>
+                    </div>
+                    <div className="text-white/35 mt-0.5">{c.detail}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* GPS / location fix */}
+        <div className="p-4 border-b border-white/[0.06]">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-white/40 mb-2 flex items-center gap-1.5">
+            <MapPin size={11} className="text-cyan-400" /> Your Location
+          </h3>
+          {homePosition && geoFixState === 'ok' ? (
+            <>
+              <div className="space-y-1 font-mono text-[10px] text-white/50">
+                <div className="flex justify-between">
+                  <span className="text-white/30">Lat</span><span>{homePosition.lat.toFixed(6)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-white/30">Lon</span><span>{homePosition.lon.toFixed(6)}</span>
+                </div>
+              </div>
+              <div className="mt-1.5 flex items-center gap-1.5">
+                <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                <span className="text-[9px] text-cyan-400/60">GPS fix</span>
+              </div>
+            </>
+          ) : (
+            <p className="text-[10px] text-white/40 leading-relaxed">
+              {(geoFixState === 'loading' || geoFixState === 'idle') && 'Acquiring position…'}
+              {geoFixState === 'no_fix' && 'No GPS position fix. Enable location permission or place waypoints on the map.'}
+              {geoFixState === 'unsupported' && 'Geolocation is not available in this browser.'}
+            </p>
+          )}
+        </div>
 
         {/* Waypoint list with inline editing */}
         <div className="p-4 border-b border-white/[0.06]">

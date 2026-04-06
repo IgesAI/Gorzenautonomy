@@ -26,6 +26,7 @@ export interface EnvelopeSurface {
 }
 
 export interface EnvelopeResponse {
+  param_override_warnings?: string[];
   speed_altitude_feasibility?: EnvelopeSurface;
   safe_inspection_speed?: EnvelopeOutput;
   fuel_endurance?: EnvelopeOutput;

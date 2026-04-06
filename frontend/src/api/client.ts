@@ -5,6 +5,8 @@ import type {
   DroneTransferResponse,
   LogUploadResponse,
   MissionAnalysis,
+  MissionValidateRequest,
+  MissionValidateResponse,
   ModelChainResponse,
   NiirsLevel,
   SolarResponse,
@@ -235,6 +237,11 @@ export const api = {
         '/mission-plan/import/plan',
         { method: 'POST', body: JSON.stringify(planData) },
       ),
+    validate: (body: MissionValidateRequest) =>
+      request<MissionValidateResponse>('/mission-plan/validate', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
   },
   auth: {
     login: (username: string, password: string) => {

@@ -258,9 +258,11 @@ export function EnvironmentIntel({ onEnvironmentData, sharedLocation }: Environm
   const [solar, setSolar] = useState<SolarData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lat, setLat] = useState(35.0);
-  const [lon, setLon] = useState(-106.6);
-  const [geoStatus, setGeoStatus] = useState<'idle' | 'locating' | 'success' | 'denied'>('idle');
+  const [lat, setLat] = useState<number | null>(null);
+  const [lon, setLon] = useState<number | null>(null);
+  const [geoStatus, setGeoStatus] = useState<
+    'idle' | 'locating' | 'success' | 'no_fix' | 'unsupported'
+  >('idle');
   const [usedSharedGeo, setUsedSharedGeo] = useState(false);
 
   const fetchData = useCallback(async (fetchLat: number, fetchLon: number) => {
@@ -295,7 +297,10 @@ export function EnvironmentIntel({ onEnvironmentData, sharedLocation }: Environm
   }, [onEnvironmentData]);
 
   const requestGeolocation = useCallback(() => {
-    if (!navigator.geolocation) { setGeoStatus('denied'); return; }
+    if (!navigator.geolocation) {
+      setGeoStatus('unsupported');
+      return;
+    }
     setGeoStatus('locating');
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -306,10 +311,12 @@ export function EnvironmentIntel({ onEnvironmentData, sharedLocation }: Environm
         setGeoStatus('success');
         fetchData(newLat, newLon);
       },
-      () => { setGeoStatus('denied'); fetchData(lat, lon); },
+      () => {
+        setGeoStatus('no_fix');
+      },
       { enableHighAccuracy: true, timeout: 10000 },
     );
-  }, [fetchData, lat, lon]);
+  }, [fetchData]);
 
   useEffect(() => {
     if (sharedLocation && !usedSharedGeo) {
@@ -338,8 +345,11 @@ export function EnvironmentIntel({ onEnvironmentData, sharedLocation }: Environm
               className="glass-button text-[10px] py-1 px-2.5 disabled:opacity-50">
               {geoStatus === 'locating' ? '...' : 'GPS'}
             </button>
-            <button onClick={() => fetchData(lat, lon)} disabled={loading}
-              className="glass-button text-[10px] py-1 px-2.5 disabled:opacity-50">
+            <button
+              onClick={() => lat != null && lon != null && fetchData(lat, lon)}
+              disabled={loading || lat == null || lon == null}
+              className="glass-button text-[10px] py-1 px-2.5 disabled:opacity-50"
+            >
               {loading ? '...' : 'Refresh'}
             </button>
           </div>
@@ -347,19 +357,54 @@ export function EnvironmentIntel({ onEnvironmentData, sharedLocation }: Environm
         <div className="flex gap-2">
           <div className="flex-1">
             <label htmlFor="env-lat" className="text-[9px] text-white/30 block mb-0.5">Lat</label>
-            <input id="env-lat" type="number" value={lat} onChange={e => setLat(+e.target.value)} step={0.1}
-              className="glass-input text-xs" />
+            <input
+              id="env-lat"
+              type="number"
+              value={lat === null ? '' : lat}
+              onChange={(e) => {
+                const raw = e.target.value;
+                if (raw === '') {
+                  setLat(null);
+                  return;
+                }
+                const n = parseFloat(raw);
+                if (!Number.isNaN(n)) setLat(n);
+              }}
+              step={0.1}
+              className="glass-input text-xs"
+            />
           </div>
           <div className="flex-1">
             <label htmlFor="env-lon" className="text-[9px] text-white/30 block mb-0.5">Lon</label>
-            <input id="env-lon" type="number" value={lon} onChange={e => setLon(+e.target.value)} step={0.1}
-              className="glass-input text-xs" />
+            <input
+              id="env-lon"
+              type="number"
+              value={lon === null ? '' : lon}
+              onChange={(e) => {
+                const raw = e.target.value;
+                if (raw === '') {
+                  setLon(null);
+                  return;
+                }
+                const n = parseFloat(raw);
+                if (!Number.isNaN(n)) setLon(n);
+              }}
+              step={0.1}
+              className="glass-input text-xs"
+            />
           </div>
         </div>
         {geoStatus === 'success' && (
           <div className="mt-1.5 text-[9px] text-gorzen-400 flex items-center gap-1">
             <div className="w-1.5 h-1.5 rounded-full bg-gorzen-400 animate-pulse" />
             Live GPS
+          </div>
+        )}
+        {(geoStatus === 'no_fix' || geoStatus === 'unsupported') && (
+          <div className="mt-1.5 text-[9px] text-white/35">
+            {geoStatus === 'unsupported'
+              ? 'Geolocation not available. Enter latitude and longitude manually, then Refresh.'
+              : 'No GPS position fix. Enter coordinates manually or tap GPS to retry.'}
           </div>
         )}
         {error && <div className="mt-1.5 text-[10px] text-red-400">{error}</div>}

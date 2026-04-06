@@ -7,6 +7,7 @@ from typing import Callable
 
 import numpy as np
 
+from gorzen.config import settings
 from gorzen.schemas.parameter import EnvelopeOutput, SensitivityEntry, UncertaintySpec
 from gorzen.uq.monte_carlo import MCInput, MCResult, MonteCarloEngine
 from gorzen.uq.pce import PCEResult, PCESurrogate
@@ -112,6 +113,17 @@ class UQPropagator:
                 f"({pct:.1f}%); statistics use successful samples only."
             )
 
+        fail_rate = (
+            mc_result.n_failed / mc_result.n_attempted
+            if mc_result.n_attempted > 0
+            else 0.0
+        )
+        if fail_rate > settings.uq_mc_failure_rate_mcp_zero:
+            result.warnings.append(
+                f"Monte Carlo: failure rate {fail_rate:.1%} exceeds threshold "
+                f"{settings.uq_mc_failure_rate_mcp_zero:.0%}; mission_completion_probability set to 0."
+            )
+
         names = output_names or list(mc_result.output_samples.keys())
         for name in names:
             if name in mc_result.output_samples:
@@ -130,6 +142,8 @@ class UQPropagator:
                 result.warnings.append(
                     "Monte Carlo: no successful samples; mission_completion_probability set to 0."
                 )
+                result.mission_completion_probability = 0.0
+            elif fail_rate > settings.uq_mc_failure_rate_mcp_zero:
                 result.mission_completion_probability = 0.0
             else:
                 all_satisfied = np.ones(mc_result.n_samples, dtype=bool)

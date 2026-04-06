@@ -340,6 +340,3 @@ def waypoints_from_json(data: list[dict[str, Any]]) -> list[Waypoint]:
         )
     return wps
 
-
-# Singleton
-mission_service = MissionService()

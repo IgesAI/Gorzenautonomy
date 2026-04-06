@@ -62,9 +62,12 @@ def _coerce_value(val: Any, default_type: type = float) -> Any:
     return val
 
 
-def _apply_param_overrides(twin: VehicleTwin, overrides: dict[str, dict[str, Any]]) -> None:
+def _apply_param_overrides(twin: VehicleTwin, overrides: dict[str, dict[str, Any]]) -> list[str]:
     """Apply param_overrides to twin in-place. mission_profile params routed to environment/constraints.
-    Values are coerced for deterministic model input. Iteration order is sorted for deterministic behavior."""
+
+    Returns a list of ignored override keys (``subsystem.name``) for operator visibility.
+    """
+    ignored: list[str] = []
     for subsystem in sorted(overrides.keys()):
         params = overrides[subsystem]
         if not params:
@@ -80,6 +83,8 @@ def _apply_param_overrides(twin: VehicleTwin, overrides: dict[str, dict[str, Any
                     getattr(env, name).value = _coerce_value(val)
                 elif name in _MISSION_CONSTRAINT_PARAMS and hasattr(constraints, name):
                     getattr(constraints, name).value = _coerce_value(val)
+                else:
+                    ignored.append(f"mission_profile.{name}")
         elif hasattr(twin, subsystem):
             config = getattr(twin, subsystem)
             for name in sorted(params.keys()):
@@ -90,15 +95,34 @@ def _apply_param_overrides(twin: VehicleTwin, overrides: dict[str, dict[str, Any
                         attr.value = _coerce_value(val)
                     else:
                         setattr(config, name, _coerce_value(val))
+                else:
+                    ignored.append(f"{subsystem}.{name}")
+        else:
+            for name in sorted(params.keys()):
+                ignored.append(f"{subsystem}.{name}")
+    return ignored
+
+
+def _merge_override_warnings(response: EnvelopeResponse, ignored: list[str]) -> EnvelopeResponse:
+    if not ignored:
+        return response
+    extra = [f"param_overrides ignored: {k}" for k in ignored]
+    return response.model_copy(
+        update={
+            "param_override_warnings": list(ignored),
+            "warnings": list(response.warnings) + extra,
+        }
+    )
 
 
 @router.post("/default/envelope", response_model=EnvelopeResponse)
 async def compute_default_envelope(request: EnvelopeRequest) -> EnvelopeResponse:
     """Compute envelope using default twin config, with optional param_overrides from frontend."""
     twin = VehicleTwin()
+    ignored: list[str] = []
     if request.param_overrides:
-        _apply_param_overrides(twin, request.param_overrides)
-    return compute_envelope(
+        ignored = _apply_param_overrides(twin, request.param_overrides)
+    out = compute_envelope(
         twin,
         speed_range=request.speed_range_ms,
         altitude_range=request.altitude_range_m,
@@ -106,6 +130,7 @@ async def compute_default_envelope(request: EnvelopeRequest) -> EnvelopeResponse
         uq_method=request.uq_method,
         mc_samples=request.mc_samples,
     )
+    return _merge_override_warnings(out, ignored)
 
 
 @router.get("/{twin_id}/endurance-preview")
@@ -136,9 +161,10 @@ async def compute_twin_envelope(
         raise HTTPException(status_code=404, detail="Twin not found")
 
     twin = copy.deepcopy(twin_model)
+    ignored: list[str] = []
     if request.param_overrides:
-        _apply_param_overrides(twin, request.param_overrides)
-    return compute_envelope(
+        ignored = _apply_param_overrides(twin, request.param_overrides)
+    out = compute_envelope(
         twin,
         speed_range=request.speed_range_ms,
         altitude_range=request.altitude_range_m,
@@ -146,3 +172,4 @@ async def compute_twin_envelope(
         uq_method=request.uq_method,
         mc_samples=request.mc_samples,
     )
+    return _merge_override_warnings(out, ignored)

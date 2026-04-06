@@ -23,7 +23,6 @@ from gorzen.api.limiter import limiter
 from gorzen.config import settings
 from gorzen.db.session import async_session_factory, engine
 from gorzen.services.mavlink_telemetry import telemetry_service
-from gorzen.services.mission_planner import mission_service, waypoints_from_json
 
 log = structlog.get_logger("gorzen.app")
 
@@ -121,21 +120,6 @@ class DatabaseUnavailableMiddleware(BaseHTTPMiddleware):
             raise
 
 
-async def _load_mission_draft() -> None:
-    from gorzen.db import mission_repo
-
-    async with async_session_factory() as session:
-        try:
-            await mission_repo.ensure_mission_draft_row(session)
-            raw = await mission_repo.load_waypoints_json(session)
-            await session.commit()
-            if raw:
-                mission_service.set_waypoints(waypoints_from_json(raw))
-        except Exception as e:
-            await session.rollback()
-            log.warning("mission_draft_load_failed", error=str(e))
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     _configure_logging()
@@ -157,8 +141,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         log.warning(
             "SECURITY: JWT secret is too short. Set GORZEN_JWT_SECRET to a random 32+ char string."
         )
-
-    await _load_mission_draft()
 
     try:
         async with engine.begin() as conn:

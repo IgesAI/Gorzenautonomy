@@ -59,6 +59,9 @@ line-length = 100
 asyncio_mode = "auto"
 testpaths = ["../tests/backend"]
 addopts = "-v --tb=short"
+markers = [
+    "integration: optional tests (e.g. RUN_SITL=1 for PX4 SITL)",
+]
 
 # Unit tests hit models, envelope solver, core schemas, and UQ — not API/DB/services.
 # Omit paths that need integration tests so --cov-fail-under matches this suite.

@@ -21,6 +21,8 @@ class Settings(BaseSettings):
 
     uq_default_mc_samples: int = 1000
     uq_default_method: str = "monte_carlo"
+    #: If Monte Carlo model failure rate exceeds this fraction, mission_completion_probability is forced to 0.
+    uq_mc_failure_rate_mcp_zero: float = 0.05
 
     # JWT: leave empty to disable auth (local dev only).
     jwt_secret: str = ""

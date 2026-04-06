@@ -39,11 +39,11 @@ class TwinConfigDB(Base):
 
 
 class MissionDraftDB(Base):
-    """Singleton row (id=1) storing the editable mission waypoint list for restart safety."""
+    """Editable mission waypoint list per authenticated user (JWT ``sub``)."""
 
     __tablename__ = "mission_drafts"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_sub: Mapped[str] = mapped_column(String(256), primary_key=True)
     waypoints_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

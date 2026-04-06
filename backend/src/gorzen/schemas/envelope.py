@@ -65,6 +65,10 @@ class ConstraintProvenance(BaseModel):
 class EnvelopeResponse(BaseModel):
     """Full envelope computation response."""
 
+    param_override_warnings: list[str] = Field(
+        default_factory=list,
+        description="param_overrides keys that did not match any twin field (unknown subsystem or parameter).",
+    )
     speed_altitude_feasibility: EnvelopeSurface | None = None
     safe_inspection_speed: EnvelopeOutput | None = None
     fuel_endurance: EnvelopeOutput | None = None

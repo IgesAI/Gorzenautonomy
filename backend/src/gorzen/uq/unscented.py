@@ -23,7 +23,7 @@ class UTResult:
     output_cov: np.ndarray | None = None
     n_sigma_points: int = 0
     sigma_point_evaluation_failures: int = 0
-    """Count of sigma points where ``model_fn`` raised; mean-point fallback was used."""
+    """Count of sigma points where ``model_fn`` raised; those points are excluded and weights renormalized."""
     warnings: list[str] = field(default_factory=list)
 
     def envelope_output(self, name: str, units: str = "") -> EnvelopeOutput:
@@ -101,45 +101,60 @@ class UnscentedTransform:
         sigmas, wm, wc = self._sigma_points(param_means, param_cov)
         n_sigma = sigmas.shape[0]
 
-        # Evaluate model at each sigma point
-        outputs_list: list[dict[str, float]] = []
+        # Evaluate model at each sigma point (failed points excluded; weights renormalized)
+        outputs_list: list[dict[str, float] | None] = []
         warnings: list[str] = []
         failures = 0
-        nominal_dict = {name: float(param_means[j]) for j, name in enumerate(param_names)}
         for i in range(n_sigma):
             input_dict = {name: float(sigmas[i, j]) for j, name in enumerate(param_names)}
             try:
                 out = model_fn(input_dict)
+                outputs_list.append(out)
             except Exception as exc:
                 failures += 1
-                warnings.append(
-                    f"sigma_point[{i}]: {type(exc).__name__}, using nominal-point evaluation"
-                )
-                out = model_fn(nominal_dict)
-            outputs_list.append(out)
+                warnings.append(f"sigma_point[{i}]: {type(exc).__name__}, excluded from UT statistics")
+                outputs_list.append(None)
 
-        # Collect output names from first evaluation
-        out_names = list(outputs_list[0].keys())
+        valid_idx = [i for i, o in enumerate(outputs_list) if o is not None]
+        if not valid_idx:
+            return UTResult(
+                warnings=warnings + ["UT: all sigma-point evaluations failed"],
+                n_sigma_points=n_sigma,
+                sigma_point_evaluation_failures=failures,
+            )
+
+        first = outputs_list[valid_idx[0]]
+        assert first is not None
+        out_names = list(first.keys())
         n_out = len(out_names)
 
-        # Build output matrix
-        Y = np.zeros((n_sigma, n_out))
-        for i, out_dict in enumerate(outputs_list):
+        wm_f = np.array([wm[i] for i in valid_idx])
+        wm_f = wm_f / wm_f.sum()
+        wc_f = np.array([wc[i] for i in valid_idx])
+        wc_f = wc_f / wc_f.sum()
+
+        n_valid = len(valid_idx)
+        Y = np.zeros((n_valid, n_out))
+        for row, i in enumerate(valid_idx):
+            out_dict = outputs_list[i]
+            assert out_dict is not None
             for j, name in enumerate(out_names):
-                Y[i, j] = out_dict.get(name, 0.0)
+                Y[row, j] = out_dict.get(name, 0.0)
 
-        # Weighted mean
         y_mean = np.zeros(n_out)
-        for i in range(n_sigma):
-            y_mean += wm[i] * Y[i]
+        for row in range(n_valid):
+            y_mean += wm_f[row] * Y[row]
 
-        # Weighted covariance
         P_yy = np.zeros((n_out, n_out))
-        for i in range(n_sigma):
-            dy = Y[i] - y_mean
-            P_yy += wc[i] * np.outer(dy, dy)
+        for row in range(n_valid):
+            dy = Y[row] - y_mean
+            P_yy += wc_f[row] * np.outer(dy, dy)
 
         y_std = np.sqrt(np.maximum(np.diag(P_yy), 0.0))
+        if failures > 0:
+            warnings.append(
+                f"UT: {failures}/{n_sigma} sigma points failed; mean/covariance used {n_valid} points with renormalized weights."
+            )
 
         result = UTResult(
             output_mean={name: float(y_mean[j]) for j, name in enumerate(out_names)},

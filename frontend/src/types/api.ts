@@ -71,6 +71,38 @@ export interface MissionAnalysis {
   leg_distances_m: number[];
 }
 
+/** POST /mission-plan/validate */
+export interface MissionValidateRequest {
+  twin_id: string;
+  twin_params: Record<string, unknown>;
+  environment?: Record<string, unknown> | null;
+  geofence?: [number, number][] | null;
+  terrain_elevations_m?: number[] | null;
+  required_payload_kg?: number | null;
+  target_size_m?: number | null;
+  min_pixels_on_target?: number | null;
+  max_gsd_cm_px?: number | null;
+  exposure_time_s?: number | null;
+  max_blur_px?: number | null;
+  min_overlap_pct?: number | null;
+  trigger_interval_m?: number | null;
+}
+
+export interface MissionValidateCheck {
+  name: string;
+  passed: boolean;
+  value: number;
+  limit: number;
+  unit: string;
+  detail: string;
+}
+
+export interface MissionValidateResponse {
+  is_valid: boolean;
+  checks: MissionValidateCheck[];
+  warnings: string[];
+}
+
 /** /environment responses */
 export interface SolarResponse {
   elevation_deg: number;

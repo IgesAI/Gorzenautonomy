@@ -8,11 +8,13 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from gorzen.api.deps import AuthUserDep
 from gorzen.db import audit_repo, mission_repo
 from gorzen.db.session import get_session
 from gorzen.services.mission_planner import (
+    MissionService,
     Waypoint,
-    mission_service,
+    waypoints_from_json,
     waypoints_to_json,
 )
 
@@ -97,15 +99,28 @@ def _wp_from_input(inp: WaypointInput) -> Waypoint:
     )
 
 
-async def _persist_waypoints(session: AsyncSession) -> None:
-    await mission_repo.save_waypoints_json(session, waypoints_to_json(mission_service.waypoints))
+async def _load_mission_service(session: AsyncSession, user_sub: str) -> MissionService:
+    await mission_repo.ensure_mission_draft_row(session, user_sub)
+    raw = await mission_repo.load_waypoints_json(session, user_sub)
+    ms = MissionService()
+    if raw:
+        ms.set_waypoints(waypoints_from_json(raw))
+    return ms
+
+
+async def _persist_waypoints(session: AsyncSession, user_sub: str, ms: MissionService) -> None:
+    await mission_repo.save_waypoints_json(session, user_sub, waypoints_to_json(ms.waypoints))
 
 
 @router.get("/waypoints")
-async def get_waypoints() -> dict[str, Any]:
+async def get_waypoints(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: AuthUserDep,
+) -> dict[str, Any]:
     """Get current mission waypoints and analysis."""
-    wps = mission_service.waypoints
-    analysis = mission_service.get_analysis()
+    ms = await _load_mission_service(session, user.username)
+    wps = ms.waypoints
+    analysis = ms.get_analysis()
     return {
         "waypoints": [
             {
@@ -128,14 +143,17 @@ async def get_waypoints() -> dict[str, Any]:
 async def set_mission(
     mission: MissionInput,
     session: Annotated[AsyncSession, Depends(get_session)],
+    user: AuthUserDep,
 ) -> dict[str, Any]:
     """Set the entire mission plan (replaces existing waypoints)."""
+    ms = await _load_mission_service(session, user.username)
     waypoints = [_wp_from_input(w) for w in mission.waypoints]
-    analysis = mission_service.set_waypoints(waypoints)
-    await _persist_waypoints(session)
+    analysis = ms.set_waypoints(waypoints)
+    await _persist_waypoints(session, user.username, ms)
     await audit_repo.record_event(
         session,
         event_type="mission.plan_set",
+        actor=user.username,
         payload={"waypoint_count": len(waypoints)},
     )
     return {
@@ -148,12 +166,14 @@ async def set_mission(
 async def add_waypoint(
     wp: WaypointInput,
     session: Annotated[AsyncSession, Depends(get_session)],
+    user: AuthUserDep,
 ) -> dict[str, Any]:
     """Add a single waypoint to the end of the mission."""
-    analysis = mission_service.add_waypoint(_wp_from_input(wp))
-    await _persist_waypoints(session)
+    ms = await _load_mission_service(session, user.username)
+    analysis = ms.add_waypoint(_wp_from_input(wp))
+    await _persist_waypoints(session, user.username, ms)
     return {
-        "waypoint_count": len(mission_service.waypoints),
+        "waypoint_count": len(ms.waypoints),
         "analysis": analysis.__dict__,
     }
 
@@ -162,56 +182,78 @@ async def add_waypoint(
 async def remove_waypoint(
     index: int,
     session: Annotated[AsyncSession, Depends(get_session)],
+    user: AuthUserDep,
 ) -> dict[str, Any]:
     """Remove a waypoint by index."""
-    analysis = mission_service.remove_waypoint(index)
-    await _persist_waypoints(session)
+    ms = await _load_mission_service(session, user.username)
+    analysis = ms.remove_waypoint(index)
+    await _persist_waypoints(session, user.username, ms)
     return {
-        "waypoint_count": len(mission_service.waypoints),
+        "waypoint_count": len(ms.waypoints),
         "analysis": analysis.__dict__,
     }
 
 
 @router.delete("/waypoints")
-async def clear_mission(session: Annotated[AsyncSession, Depends(get_session)]) -> dict[str, str]:
+async def clear_mission(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: AuthUserDep,
+) -> dict[str, str]:
     """Clear all waypoints."""
-    mission_service.clear()
-    await _persist_waypoints(session)
+    ms = await _load_mission_service(session, user.username)
+    ms.clear()
+    await _persist_waypoints(session, user.username, ms)
     await audit_repo.record_event(
         session,
         event_type="mission.plan_cleared",
+        actor=user.username,
     )
     return {"status": "cleared"}
 
 
 @router.get("/analysis")
-async def get_analysis() -> dict[str, Any]:
+async def get_analysis(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: AuthUserDep,
+) -> dict[str, Any]:
     """Get mission analysis (distance, duration, etc.)."""
-    analysis = mission_service.get_analysis()
+    ms = await _load_mission_service(session, user.username)
+    analysis = ms.get_analysis()
     return {"analysis": analysis.__dict__}
 
 
 @router.get("/geojson")
-async def get_geojson() -> dict[str, Any]:
+async def get_geojson(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: AuthUserDep,
+) -> dict[str, Any]:
     """Get mission as GeoJSON for map display."""
-    return mission_service.get_geojson()
+    ms = await _load_mission_service(session, user.username)
+    return ms.get_geojson()
 
 
 @router.post("/upload")
-async def upload_to_drone(req: DroneAddress) -> dict[str, Any]:
+async def upload_to_drone(
+    req: DroneAddress,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: AuthUserDep,
+) -> dict[str, Any]:
     """Upload mission to PX4 drone via MAVSDK."""
-    return await mission_service.upload_to_drone(req.address)
+    ms = await _load_mission_service(session, user.username)
+    return await ms.upload_to_drone(req.address)
 
 
 @router.post("/download")
 async def download_from_drone(
     req: DroneAddress,
     session: Annotated[AsyncSession, Depends(get_session)],
+    user: AuthUserDep,
 ) -> dict[str, Any]:
     """Download mission from PX4 drone via MAVSDK."""
-    result = await mission_service.download_from_drone(req.address)
+    ms = await _load_mission_service(session, user.username)
+    result = await ms.download_from_drone(req.address)
     if result.get("success"):
-        await _persist_waypoints(session)
+        await _persist_waypoints(session, user.username, ms)
     return result
 
 
@@ -219,6 +261,7 @@ async def download_from_drone(
 async def import_qgc_plan_json(
     plan_data: dict[str, Any],
     session: Annotated[AsyncSession, Depends(get_session)],
+    user: AuthUserDep,
 ) -> dict[str, Any]:
     """Import a QGroundControl .plan JSON into the current mission.
 
@@ -241,11 +284,13 @@ async def import_qgc_plan_json(
         for wp in plan.waypoints
     ]
 
-    analysis = mission_service.set_waypoints(waypoints)
-    await _persist_waypoints(session)
+    ms = await _load_mission_service(session, user.username)
+    analysis = ms.set_waypoints(waypoints)
+    await _persist_waypoints(session, user.username, ms)
     await audit_repo.record_event(
         session,
         event_type="mission.plan_imported",
+        actor=user.username,
         payload={
             "source": "qgc_plan",
             "waypoint_count": len(waypoints),
@@ -263,13 +308,17 @@ async def import_qgc_plan_json(
 
 
 @router.get("/export/qgc")
-async def export_qgc() -> dict[str, Any]:
+async def export_qgc(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: AuthUserDep,
+) -> dict[str, Any]:
     """Export current mission as QGroundControl .plan JSON."""
     from gorzen.services.mission_export import export_qgc_plan
     from gorzen.schemas.mission import MissionPlan, WaypointType
     from gorzen.schemas.mission import Waypoint as SchemaWaypoint
 
-    wps = mission_service.waypoints
+    ms = await _load_mission_service(session, user.username)
+    wps = ms.waypoints
     schema_wps = [
         SchemaWaypoint(
             sequence=i,
@@ -288,14 +337,18 @@ async def export_qgc() -> dict[str, Any]:
 
 
 @router.get("/export/kml")
-async def export_kml() -> Any:
+async def export_kml(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: AuthUserDep,
+) -> Any:
     """Export current mission as KML."""
     from fastapi.responses import Response
     from gorzen.services.mission_export import export_kml as _export_kml
     from gorzen.schemas.mission import MissionPlan, WaypointType
     from gorzen.schemas.mission import Waypoint as SchemaWaypoint
 
-    wps = mission_service.waypoints
+    ms = await _load_mission_service(session, user.username)
+    wps = ms.waypoints
     schema_wps = [
         SchemaWaypoint(
             sequence=i,
@@ -315,13 +368,17 @@ async def export_kml() -> Any:
 
 
 @router.get("/export/px4")
-async def export_px4() -> dict[str, Any]:
+async def export_px4(
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: AuthUserDep,
+) -> dict[str, Any]:
     """Export current mission as PX4 MissionRaw items."""
     from gorzen.services.mission_export import export_px4_mission
     from gorzen.schemas.mission import MissionPlan, WaypointType
     from gorzen.schemas.mission import Waypoint as SchemaWaypoint
 
-    wps = mission_service.waypoints
+    ms = await _load_mission_service(session, user.username)
+    wps = ms.waypoints
     schema_wps = [
         SchemaWaypoint(
             sequence=i,
@@ -341,14 +398,19 @@ async def export_px4() -> dict[str, Any]:
 
 
 @router.post("/validate", response_model=ValidateResponse)
-async def validate_mission(req: ValidateRequest) -> ValidateResponse:
+async def validate_mission(
+    req: ValidateRequest,
+    session: Annotated[AsyncSession, Depends(get_session)],
+    user: AuthUserDep,
+) -> ValidateResponse:
     """Run pre-flight validation checks against the current mission plan."""
     from gorzen.schemas.mission import MissionPlan, WaypointType
     from gorzen.schemas.mission import Waypoint as SchemaWaypoint
     from gorzen.services.mission_planner import analyze_mission
     from gorzen.services.mission_validator import validate_mission as run_validation
 
-    wps = mission_service.waypoints
+    ms = await _load_mission_service(session, user.username)
+    wps = ms.waypoints
     if not wps:
         return ValidateResponse(
             is_valid=False,
