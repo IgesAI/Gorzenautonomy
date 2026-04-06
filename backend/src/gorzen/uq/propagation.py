@@ -113,11 +113,7 @@ class UQPropagator:
                 f"({pct:.1f}%); statistics use successful samples only."
             )
 
-        fail_rate = (
-            mc_result.n_failed / mc_result.n_attempted
-            if mc_result.n_attempted > 0
-            else 0.0
-        )
+        fail_rate = mc_result.n_failed / mc_result.n_attempted if mc_result.n_attempted > 0 else 0.0
         if fail_rate > settings.uq_mc_failure_rate_mcp_zero:
             result.warnings.append(
                 f"Monte Carlo: failure rate {fail_rate:.1%} exceeds threshold "

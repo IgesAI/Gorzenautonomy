@@ -112,7 +112,9 @@ class UnscentedTransform:
                 outputs_list.append(out)
             except Exception as exc:
                 failures += 1
-                warnings.append(f"sigma_point[{i}]: {type(exc).__name__}, excluded from UT statistics")
+                warnings.append(
+                    f"sigma_point[{i}]: {type(exc).__name__}, excluded from UT statistics"
+                )
                 outputs_list.append(None)
 
         valid_idx = [i for i, o in enumerate(outputs_list) if o is not None]
