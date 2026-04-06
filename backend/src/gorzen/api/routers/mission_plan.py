@@ -25,7 +25,11 @@ router = APIRouter()
 
 
 class ValidateRequest(BaseModel):
-    """Request body for pre-flight mission validation."""
+    """Request body for pre-flight mission validation.
+
+    Perception / overlap fields mirror :func:`gorzen.services.mission_validator.validate_mission`.
+    When omitted, checks that require them report INSUFFICIENT_DATA (strict mode).
+    """
 
     twin_id: str
     twin_params: dict[str, Any]
@@ -33,6 +37,13 @@ class ValidateRequest(BaseModel):
     geofence: list[tuple[float, float]] | None = None
     terrain_elevations_m: list[float] | None = None
     required_payload_kg: float | None = None
+    target_size_m: float | None = None
+    min_pixels_on_target: float | None = None
+    max_gsd_cm_px: float | None = None
+    exposure_time_s: float | None = None
+    max_blur_px: float | None = None
+    min_overlap_pct: float | None = None
+    trigger_interval_m: float | None = None
 
 
 class CheckResultResponse(BaseModel):
@@ -374,6 +385,13 @@ async def validate_mission(req: ValidateRequest) -> ValidateResponse:
         geofence=req.geofence,
         terrain_elevations_m=req.terrain_elevations_m,
         required_payload_kg=req.required_payload_kg,
+        target_size_m=req.target_size_m,
+        min_pixels_on_target=req.min_pixels_on_target,
+        max_gsd_cm_px=req.max_gsd_cm_px,
+        exposure_time_s=req.exposure_time_s,
+        max_blur_px=req.max_blur_px,
+        min_overlap_pct=req.min_overlap_pct,
+        trigger_interval_m=req.trigger_interval_m,
     )
 
     return ValidateResponse(

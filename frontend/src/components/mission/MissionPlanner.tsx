@@ -94,18 +94,20 @@ export function MissionPlanner({ sharedLocation, twinId = 'default', missionConf
 
   useEffect(() => {
     let cancelled = false;
+    const speed = missionConfig?.nominal_speed_ms ?? 15;
+    const alt = missionConfig?.nominal_altitude_m ?? 50;
     api.envelope
-      .endurancePreview(twinId)
+      .endurancePreview(twinId, speed, alt)
       .then((e) => {
         if (!cancelled) setEnduranceMinutes(Math.max(1, e.endurance_minutes_effective || 1));
       })
       .catch(() => {
-        if (!cancelled) setEnduranceMinutes(25);
+        if (!cancelled) setEnduranceMinutes(missionConfig?.min_endurance_min ?? 25);
       });
     return () => {
       cancelled = true;
     };
-  }, [twinId]);
+  }, [twinId, missionConfig?.nominal_speed_ms, missionConfig?.nominal_altitude_m, missionConfig?.min_endurance_min]);
 
   useEffect(() => {
     let stopped = false;

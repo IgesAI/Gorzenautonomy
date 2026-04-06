@@ -9,6 +9,10 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from gorzen.services.mavlink_mission_coords import (
+    normalize_mission_frame_for_raw_upload,
+    normalize_xy_to_mavlink_int,
+)
 from gorzen.services.mavsdk_connection import get_mavsdk_system
 
 router = APIRouter()
@@ -68,10 +72,16 @@ class MissionProgress(BaseModel):
 
 
 def _mavlink_to_raw_item(item: dict[str, Any], seq: int) -> "RawMissionItem":
-    """Convert our MAVLink item dict to MAVSDK MissionRaw.MissionItem."""
+    """Convert our MAVLink item dict to MAVSDK MissionRaw.MissionItem.
+
+    ``x``/``y`` may be WGS-84 degrees (planner/export) or already MISSION_ITEM_INT
+    scaled integers; see :func:`normalize_xy_to_mavlink_int`.
+    """
+    xi, yi = normalize_xy_to_mavlink_int(item.get("x", 0), item.get("y", 0))
+    frame = normalize_mission_frame_for_raw_upload(item.get("frame"))
     return RawMissionItem(
         seq=seq,
-        frame=int(item.get("frame", 3)),
+        frame=frame,
         command=int(item.get("command", 16)),
         current=int(item.get("current", 1 if seq == 0 else 0)),
         autocontinue=int(item.get("autocontinue", 1)),
@@ -79,10 +89,10 @@ def _mavlink_to_raw_item(item: dict[str, Any], seq: int) -> "RawMissionItem":
         param2=float(item.get("param2", 0)),
         param3=float(item.get("param3", 0)),
         param4=float(item.get("param4", 0)),
-        x=int(float(item.get("x", 0)) * 1e7),
-        y=int(float(item.get("y", 0)) * 1e7),
+        x=xi,
+        y=yi,
         z=float(item.get("z", 0)),
-        mission_type=0,
+        mission_type=int(item.get("mission_type", 0)),
     )
 
 

@@ -36,6 +36,8 @@ class UQResult:
     raw_mc: MCResult | None = None
     raw_ut: UTResult | None = None
     raw_pce: PCEResult | None = None
+    warnings: list[str] = field(default_factory=list)
+    """Degraded or partial results (e.g. dropped MC samples, UT fallbacks, PCE fit failures)."""
 
 
 class UQPropagator:
@@ -103,6 +105,13 @@ class UQPropagator:
 
         result = UQResult(method="monte_carlo", raw_mc=mc_result)
 
+        if mc_result.n_failed > 0:
+            pct = 100.0 * mc_result.n_failed / max(mc_result.n_attempted, 1)
+            result.warnings.append(
+                f"Monte Carlo: {mc_result.n_failed}/{mc_result.n_attempted} model evaluations failed "
+                f"({pct:.1f}%); statistics use successful samples only."
+            )
+
         names = output_names or list(mc_result.output_samples.keys())
         for name in names:
             if name in mc_result.output_samples:
@@ -117,15 +126,21 @@ class UQPropagator:
 
         # Mission completion probability: all constraints satisfied simultaneously
         if constraints:
-            all_satisfied = np.ones(mc_result.n_samples, dtype=bool)
-            for oname, (thresh, direction) in constraints.items():
-                if oname in mc_result.output_samples:
-                    s = mc_result.output_samples[oname]
-                    if direction == ">=":
-                        all_satisfied &= s >= thresh
-                    elif direction == "<=":
-                        all_satisfied &= s <= thresh
-            result.mission_completion_probability = float(np.mean(all_satisfied))
+            if mc_result.n_samples == 0:
+                result.warnings.append(
+                    "Monte Carlo: no successful samples; mission_completion_probability set to 0."
+                )
+                result.mission_completion_probability = 0.0
+            else:
+                all_satisfied = np.ones(mc_result.n_samples, dtype=bool)
+                for oname, (thresh, direction) in constraints.items():
+                    if oname in mc_result.output_samples:
+                        s = mc_result.output_samples[oname]
+                        if direction == ">=":
+                            all_satisfied &= s >= thresh
+                        elif direction == "<=":
+                            all_satisfied &= s <= thresh
+                result.mission_completion_probability = float(np.mean(all_satisfied))
 
         return result
 
@@ -155,7 +170,7 @@ class UQPropagator:
         ut = UnscentedTransform()
         ut_result = ut.propagate(model_fn, param_names, means, cov)
 
-        result = UQResult(method="unscented", raw_ut=ut_result)
+        result = UQResult(method="unscented", raw_ut=ut_result, warnings=list(ut_result.warnings))
         names = output_names or list(ut_result.output_mean.keys())
         for name in names:
             if name in ut_result.output_mean:
@@ -192,7 +207,14 @@ class UQPropagator:
         pce.fit(model_fn, param_names, bounds)
         pce_result = pce.compute_statistics()
 
-        result = UQResult(method="pce", raw_pce=pce_result)
+        pce_warnings: list[str] = []
+        if pce.fit_evaluation_failures > 0:
+            pce_warnings.append(
+                f"PCE training: {pce.fit_evaluation_failures} model evaluations failed; "
+                "failed rows treated as zero output in least-squares fit."
+            )
+
+        result = UQResult(method="pce", raw_pce=pce_result, warnings=pce_warnings)
         names = output_names or list(pce_result.output_mean.keys())
         for name in names:
             if name in pce_result.output_mean:

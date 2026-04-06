@@ -1,0 +1,10 @@
+# Limit analysis to application source (faster, fewer false positives).
+name: Gorzen CodeQL config
+paths:
+  - backend/src
+  - frontend/src
+paths-ignore:
+  - "**/node_modules/**"
+  - "**/__pycache__/**"
+  - "**/*.test.ts"
+  - "**/*.test.tsx"

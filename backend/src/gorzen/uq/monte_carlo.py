@@ -33,6 +33,11 @@ class MCResult:
     output_samples: dict[str, np.ndarray] = field(default_factory=dict)
     input_samples: dict[str, np.ndarray] = field(default_factory=dict)
     n_samples: int = 0
+    """Number of successful model evaluations (aligned output rows)."""
+    n_attempted: int = 0
+    """Total trials (equals engine n_samples when all inputs valid)."""
+    n_failed: int = 0
+    """Model evaluations that raised or returned unusable output (dropped)."""
 
     def envelope_output(self, name: str, units: str = "") -> EnvelopeOutput:
         s = self.output_samples.get(name, np.array([0.0]))
@@ -167,6 +172,7 @@ class MonteCarloEngine:
         output_samples: dict[str, list[float]] = {}
         successful_inputs: dict[str, list[float]] = {name: [] for name in input_samples}
 
+        n_failed = 0
         for i in range(self.n_samples):
             input_dict = {name: float(samples[i]) for name, samples in input_samples.items()}
             try:
@@ -178,6 +184,7 @@ class MonteCarloEngine:
                 for name, samples in input_samples.items():
                     successful_inputs[name].append(float(samples[i]))
             except Exception:
+                n_failed += 1
                 continue
 
         n_success = len(next(iter(output_samples.values()))) if output_samples else 0
@@ -190,5 +197,7 @@ class MonteCarloEngine:
             input_samples=input_arrays,
             output_samples={k: np.array(v) for k, v in output_samples.items()},
             n_samples=n_success,
+            n_attempted=self.n_samples,
+            n_failed=n_failed,
         )
         return result

@@ -1,22 +1,19 @@
-"""Shared MAVSDK ``System`` access: reuse telemetry connection when available."""
+"""Shared MAVSDK ``System`` access for mission execution APIs.
+
+Telemetry uses pymavlink (``mavutil``) in
+:class:`gorzen.services.mavlink_telemetry.MAVLinkTelemetryService`; that object is
+**not** a MAVSDK :class:`mavsdk.System` and must never be returned here — doing so
+breaks ``mission_raw`` / ``mission`` upload paths at runtime.
+"""
 
 from __future__ import annotations
 
 import asyncio
 from typing import Any
 
-from gorzen.services.mavlink_telemetry import telemetry_service
-
 
 async def get_mavsdk_system(connection_url: str = "udp://:14540") -> Any:
-    """Return the telemetry service's connected ``System``, or connect a new one.
-
-    When ``telemetry_service`` is already connected, its ``System`` is reused to avoid
-    conflicting MAVLink sessions to the same endpoint.
-    """
-    shared = telemetry_service.get_connected_system()
-    if shared is not None:
-        return shared
+    """Connect and return a MAVSDK :class:`mavsdk.System` (never a pymavlink connection)."""
 
     try:
         from mavsdk import System

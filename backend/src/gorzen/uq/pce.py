@@ -73,6 +73,18 @@ def _multiindex_set(n_dim: int, max_order: int) -> list[tuple[int, ...]]:
     return indices
 
 
+def _legendre_uniform_basis_variance_weight(midx: tuple[int, ...]) -> float:
+    """Variance contribution weight for tensor Legendre basis under Uniform(-1,1) per axis.
+
+    For independent Uniform(-1,1) inputs, E[P_{α_1}(X_1)^2 ...] = ∏_d 1/(2α_d+1)
+    with numpy's Legendre polynomials (orthogonal on [-1,1] w.r.t. uniform measure).
+    """
+    w = 1.0
+    for order in midx:
+        w /= float(2 * order + 1)
+    return w
+
+
 class PCESurrogate:
     """Polynomial Chaos Expansion surrogate using Legendre polynomials.
 
@@ -86,6 +98,8 @@ class PCESurrogate:
         self.coefficients: dict[str, np.ndarray] = {}
         self.multi_indices: list[tuple[int, ...]] = []
         self.param_names: list[str] = []
+        self.fit_evaluation_failures: int = 0
+        """Training samples where ``model_fn`` raised (still counted in least-squares with zeros)."""
 
     def _evaluate_basis(self, x: np.ndarray) -> np.ndarray:
         """Evaluate all basis polynomials at sample points.
@@ -116,6 +130,7 @@ class PCESurrogate:
         and solves least-squares for PCE coefficients.
         """
         self.param_names = param_names
+        self.fit_evaluation_failures = 0
         n_dim = len(param_names)
         self.multi_indices = _multiindex_set(n_dim, self.max_order)
         n_basis = len(self.multi_indices)
@@ -137,6 +152,7 @@ class PCESurrogate:
             try:
                 out = model_fn(inp)
             except Exception:
+                self.fit_evaluation_failures += 1
                 out = {}
             outputs_list.append(out)
 
@@ -144,6 +160,8 @@ class PCESurrogate:
             return
 
         out_names = list(outputs_list[0].keys())
+        if not out_names:
+            return
         Y = np.zeros((n_samples, len(out_names)))
         for i, out in enumerate(outputs_list):
             for j, name in enumerate(out_names):
@@ -173,26 +191,32 @@ class PCESurrogate:
             # Mean is the first coefficient (constant term)
             result.output_mean[oname] = float(coeffs[0])
 
-            # Variance from non-constant coefficients
-            variance = float(np.sum(coeffs[1:] ** 2))
+            # Variance: sum_j c_j^2 * ||Φ_j||^2 with correct Legendre-uniform norms
+            # (not simply sum c_j^2 unless the basis is orthonormal).
+            var_terms = [
+                float(coeffs[j] ** 2 * _legendre_uniform_basis_variance_weight(midx))
+                for j, midx in enumerate(self.multi_indices)
+                if j > 0
+            ]
+            variance = float(np.sum(var_terms)) if var_terms else 0.0
             result.output_std[oname] = float(np.sqrt(max(variance, 0)))
 
-            # First-order Sobol indices
+            # Sobol indices: numerator uses same norm-weighted contributions
             if variance > 1e-12:
                 first_order: dict[str, float] = {}
                 total_order: dict[str, float] = {}
 
                 for d, pname in enumerate(self.param_names):
-                    # Indices where only dimension d has nonzero order
                     s1 = 0.0
                     st = 0.0
                     for j, midx in enumerate(self.multi_indices):
                         if j == 0:
                             continue
+                        wj = coeffs[j] ** 2 * _legendre_uniform_basis_variance_weight(midx)
                         if midx[d] > 0:
-                            st += coeffs[j] ** 2
+                            st += wj
                             if all(midx[k] == 0 for k in range(len(midx)) if k != d):
-                                s1 += coeffs[j] ** 2
+                                s1 += wj
                     first_order[pname] = s1 / variance
                     total_order[pname] = st / variance
 

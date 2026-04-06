@@ -14,7 +14,7 @@ import { LiveTelemetry } from '../telemetry/LiveTelemetry';
 import { FlightLogAnalyzer } from '../telemetry/FlightLogAnalyzer';
 import { AnalysisPanel } from '../analysis/AnalysisPanel';
 
-import { AIRCRAFT_BY_ID } from '../../data/aircraft';
+import { AIRCRAFT_BY_ID, backendTwinIdFromFleetSelection } from '../../data/aircraft';
 import type { AircraftPreset } from '../../data/aircraft';
 import { DEFAULT_MISSION_CONFIG } from '../../data/missions';
 import type { MissionConfig } from '../../data/missions';
@@ -292,7 +292,7 @@ export function AppShell({
             >
               <MissionPlanner
                 sharedLocation={geoLocation}
-                twinId={selectedAircraftId ?? 'default'}
+                twinId={backendTwinIdFromFleetSelection(selectedAircraftId)}
                 missionConfig={missionConfig}
               />
             </ErrorBoundary>

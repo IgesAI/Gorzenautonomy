@@ -355,3 +355,14 @@ export const AIRCRAFT_FLEET: AircraftPreset[] = [
 export const AIRCRAFT_BY_ID = Object.fromEntries(
   AIRCRAFT_FLEET.map((a) => [a.id, a]),
 ) as Record<string, AircraftPreset>;
+
+/**
+ * Backend ``/twins/{id}/...`` routes expect a **persisted** vehicle twin id or the
+ * literal ``default``. Fleet preset keys (e.g. ``va55_a33hf``) are **frontend-only**
+ * and are not rows in Postgres — sending them causes 404 ``Twin not found``.
+ */
+export function backendTwinIdFromFleetSelection(selectedId: string | null): string {
+  if (!selectedId) return 'default';
+  if (selectedId in AIRCRAFT_BY_ID) return 'default';
+  return selectedId;
+}

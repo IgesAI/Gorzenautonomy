@@ -22,6 +22,9 @@ class UTResult:
     output_std: dict[str, float] = field(default_factory=dict)
     output_cov: np.ndarray | None = None
     n_sigma_points: int = 0
+    sigma_point_evaluation_failures: int = 0
+    """Count of sigma points where ``model_fn`` raised; mean-point fallback was used."""
+    warnings: list[str] = field(default_factory=list)
 
     def envelope_output(self, name: str, units: str = "") -> EnvelopeOutput:
         m = self.output_mean.get(name, 0.0)
@@ -100,12 +103,17 @@ class UnscentedTransform:
 
         # Evaluate model at each sigma point
         outputs_list: list[dict[str, float]] = []
+        warnings: list[str] = []
+        failures = 0
+        nominal_dict = {name: float(param_means[j]) for j, name in enumerate(param_names)}
         for i in range(n_sigma):
             input_dict = {name: float(sigmas[i, j]) for j, name in enumerate(param_names)}
             try:
                 out = model_fn(input_dict)
-            except Exception:
-                out = model_fn({name: float(param_means[j]) for j, name in enumerate(param_names)})
+            except Exception as exc:
+                failures += 1
+                warnings.append(f"sigma_point[{i}]: {type(exc).__name__}, using nominal-point evaluation")
+                out = model_fn(nominal_dict)
             outputs_list.append(out)
 
         # Collect output names from first evaluation
@@ -136,5 +144,7 @@ class UnscentedTransform:
             output_std={name: float(y_std[j]) for j, name in enumerate(out_names)},
             output_cov=P_yy,
             n_sigma_points=n_sigma,
+            sigma_point_evaluation_failures=failures,
+            warnings=warnings,
         )
         return result

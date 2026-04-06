@@ -11,6 +11,7 @@ import xml.etree.ElementTree as ET
 from typing import Any
 
 from gorzen.schemas.mission import MissionPlan, Waypoint, WaypointType
+from gorzen.services.mavlink_mission_coords import MAV_FRAME_GLOBAL_RELATIVE_ALT_INT
 
 _EARTH_R = 6_371_000.0
 
@@ -136,7 +137,9 @@ def export_kml(plan: MissionPlan, name: str = "Gorzen Mission") -> str:
 def export_px4_mission(plan: MissionPlan) -> list[dict[str, Any]]:
     """Export as PX4 MissionRaw items (compatible with MAVSDK upload).
 
-    Each item follows MAVLink MISSION_ITEM_INT format.
+    ``x``/``y`` are **degrees** (latitude/longitude), same contract as the mission
+    planner. Upload to the vehicle applies MISSION_ITEM_INT scaling once and uses
+    ``MAV_FRAME_GLOBAL_RELATIVE_ALT_INT``.
     """
     items: list[dict[str, Any]] = []
 
@@ -144,7 +147,7 @@ def export_px4_mission(plan: MissionPlan) -> list[dict[str, Any]]:
         cmd = _wp_type_to_mav_cmd(wp.wp_type)
         item = {
             "seq": wp.sequence,
-            "frame": 3,  # MAV_FRAME_GLOBAL_RELATIVE_ALT
+            "frame": MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
             "command": cmd,
             "current": 1 if wp.sequence == 0 else 0,
             "autocontinue": 1,
@@ -152,8 +155,8 @@ def export_px4_mission(plan: MissionPlan) -> list[dict[str, Any]]:
             "param2": wp.acceptance_radius_m,
             "param3": 0.0,
             "param4": float("nan"),
-            "x": int(wp.latitude_deg * 1e7),
-            "y": int(wp.longitude_deg * 1e7),
+            "x": wp.latitude_deg,
+            "y": wp.longitude_deg,
             "z": wp.altitude_m,
             "mission_type": 0,
         }

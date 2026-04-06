@@ -7,6 +7,13 @@ import numpy as np
 from gorzen.models.base import ModelOutput, SubsystemModel
 from gorzen.validation.parameter_validator import require_param
 
+# MIL-F-8785C / MIL-HDBK-1797 length-scale formulas use geopotential altitude in **feet**.
+_M_PER_FT = 0.3048
+
+
+def _altitude_ft(altitude_m: float) -> float:
+    return max(float(altitude_m) / _M_PER_FT, 10.0)
+
 
 class DrydenTurbulence:
     """Dryden continuous turbulence model (MIL-F-8785C).
@@ -20,12 +27,14 @@ class DrydenTurbulence:
         self.update_params(wind_speed_6m, altitude_m)
 
     def update_params(self, wind_speed_6m: float, altitude_m: float) -> None:
-        h = max(altitude_m, 3.0)
-        self.Lu = h / (0.177 + 0.000823 * h) ** 1.2
+        h_ft = _altitude_ft(altitude_m)
+        # Length scales from MIL-F-8785 (h in ft); keep Lu/Lv/Lw in **metres** for sample() dynamics.
+        lu_ft = h_ft / (0.177 + 0.000823 * h_ft) ** 1.2
+        self.Lu = lu_ft * _M_PER_FT
         self.Lv = self.Lu
-        self.Lw = h
+        self.Lw = h_ft * _M_PER_FT
         self.sigma_w = 0.1 * wind_speed_6m
-        self.sigma_u = self.sigma_w / (0.177 + 0.000823 * h) ** 0.4
+        self.sigma_u = self.sigma_w / (0.177 + 0.000823 * h_ft) ** 0.4
         self.sigma_v = self.sigma_u
 
     def sample(
@@ -72,11 +81,12 @@ class VonKarmanTurbulence:
         self.update_params(wind_speed_6m, altitude_m)
 
     def update_params(self, wind_speed_6m: float, altitude_m: float) -> None:
-        h = max(altitude_m, 3.0)
-        self.Lu = h / (0.177 + 0.000823 * h) ** 1.2
-        self.Lw = h
+        h_ft = _altitude_ft(altitude_m)
+        lu_ft = h_ft / (0.177 + 0.000823 * h_ft) ** 1.2
+        self.Lu = lu_ft * _M_PER_FT
+        self.Lw = h_ft * _M_PER_FT
         self.sigma_w = 0.1 * wind_speed_6m
-        self.sigma_u = self.sigma_w / (0.177 + 0.000823 * h) ** 0.4
+        self.sigma_u = self.sigma_w / (0.177 + 0.000823 * h_ft) ** 0.4
 
     def sample(
         self, V: float, dt: float, n_steps: int, rng: np.random.Generator | None = None

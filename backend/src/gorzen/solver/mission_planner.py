@@ -20,6 +20,7 @@ from gorzen.schemas.mission import (
 )
 from gorzen.schemas.twin_graph import VehicleTwin
 from gorzen.solver.envelope_solver import _extract_params
+from gorzen.services.mavlink_mission_coords import MAV_FRAME_GLOBAL_RELATIVE_ALT_INT
 from gorzen.solver.trajectory import TrajectoryOptimizer, make_power_model_from_params
 
 
@@ -148,7 +149,9 @@ def plan_mission(
     fuel_reserve = params.get("fuel_reserve_pct", 15.0) / 100.0
     bsfc = params.get("bsfc_cruise_g_kwh", 500.0)
     usable_fuel_g = tank_kg * 1000.0 * (1.0 - fuel_reserve)
-    energy_budget = usable_fuel_g / (bsfc + 1e-6)  # kW-hr available
+    # BSFC is g/kWh → fuel_g / (g/kWh) = kWh; trajectory optimizer uses Wh
+    energy_budget_kwh = usable_fuel_g / (bsfc + 1e-6)
+    energy_budget_wh = energy_budget_kwh * 1000.0
 
     if request.flight_speed_ms:
         speed_bounds = (request.flight_speed_ms * 0.9, request.flight_speed_ms * 1.1)
@@ -159,7 +162,7 @@ def plan_mission(
         wp_coords,
         altitude_bounds=(alt * 0.9, alt * 1.1),
         speed_bounds=speed_bounds,
-        energy_budget_wh=energy_budget,
+        energy_budget_wh=energy_budget_wh,
         target_gsd_cm=request.target_gsd_cm_px,
         max_blur_px=0.5,
         overlap_pct=request.overlap_pct,
@@ -228,7 +231,7 @@ def plan_mission(
     warnings: list[str] = []
     if traj.solver_status != "optimal":
         warnings.append(f"Trajectory solver status: {traj.solver_status}")
-    if traj.total_energy_wh > energy_budget:
+    if traj.total_energy_wh > energy_budget_wh:
         warnings.append("Estimated energy exceeds budget")
 
     envelope_summary = {
@@ -297,7 +300,7 @@ def _build_mavlink_items(
 
         item = {
             "seq": wp.sequence,
-            "frame": 3,  # MAV_FRAME_GLOBAL_RELATIVE_ALT
+            "frame": MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
             "command": cmd,
             "current": 1 if wp.sequence == 0 else 0,
             "autocontinue": 1,
