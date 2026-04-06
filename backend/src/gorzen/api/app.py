@@ -21,7 +21,7 @@ from starlette.responses import JSONResponse
 from gorzen.api.deps import get_current_user
 from gorzen.api.limiter import limiter
 from gorzen.config import settings
-from gorzen.db.session import async_session_factory, engine
+from gorzen.db.session import engine
 from gorzen.services.mavlink_telemetry import telemetry_service
 
 log = structlog.get_logger("gorzen.app")

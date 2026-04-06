@@ -84,9 +84,6 @@ pytest -v
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md) – Data flow, model chain, Mermaid diagrams
-- Formula Audit (removed)
-- Output Audit (removed)
-- Audit Remediation (removed)
 
 ## License
 
