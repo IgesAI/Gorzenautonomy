@@ -1,6 +1,9 @@
 # Flags PRs that introduce dependencies with known vulnerabilities (requires Dependency graph).
 name: Dependency review
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 on:
   pull_request:
     branches: [main, develop]
@@ -13,7 +16,7 @@ jobs:
   dependency-review:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/dependency-review-action@v4
         with:
           comment-summary-in-pr: true
