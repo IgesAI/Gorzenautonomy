@@ -112,7 +112,9 @@ class UnscentedTransform:
                 out = model_fn(input_dict)
             except Exception as exc:
                 failures += 1
-                warnings.append(f"sigma_point[{i}]: {type(exc).__name__}, using nominal-point evaluation")
+                warnings.append(
+                    f"sigma_point[{i}]: {type(exc).__name__}, using nominal-point evaluation"
+                )
                 out = model_fn(nominal_dict)
             outputs_list.append(out)
 
