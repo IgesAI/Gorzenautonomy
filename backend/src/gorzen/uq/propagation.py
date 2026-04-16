@@ -9,6 +9,7 @@ import numpy as np
 
 from gorzen.config import settings
 from gorzen.schemas.parameter import EnvelopeOutput, SensitivityEntry, UncertaintySpec
+from gorzen.uq.errors import MissingUncertaintyError, UnknownMethodError
 from gorzen.uq.monte_carlo import MCInput, MCResult, MonteCarloEngine
 from gorzen.uq.pce import PCEResult, PCESurrogate
 from gorzen.uq.unscented import UTResult, UnscentedTransform
@@ -76,12 +77,13 @@ class UQPropagator:
         """
         if self.method == "monte_carlo":
             return self._run_mc(model_fn, inputs, output_names, constraints)
-        elif self.method == "unscented":
+        if self.method == "unscented":
             return self._run_ut(model_fn, inputs, output_names)
-        elif self.method == "pce":
+        if self.method == "pce":
             return self._run_pce(model_fn, inputs, output_names)
-        else:
-            return self._run_mc(model_fn, inputs, output_names, constraints)
+        raise UnknownMethodError(
+            f"Unknown UQ method {self.method!r}; choose from 'monte_carlo', 'unscented', 'pce'"
+        )
 
     def _run_mc(
         self,
@@ -167,14 +169,27 @@ class UQPropagator:
         param_names = [inp.name for inp in continuous]
         means = np.array([inp.nominal for inp in continuous])
 
-        # Build diagonal covariance from uncertainty specs
+        # Build diagonal covariance from uncertainty specs. Previously a
+        # missing ``std`` defaulted to 5% of the nominal — that silently
+        # invented uncertainty when the user forgot to declare any. Now we
+        # insist the caller supply either a Normal ``std`` or explicit bounds.
         variances = []
         for inp in continuous:
-            if inp.uncertainty:
-                std = inp.uncertainty.params.get("std", abs(inp.nominal) * 0.05)
-                variances.append(std**2)
+            if inp.uncertainty is None:
+                raise MissingUncertaintyError(
+                    f"Input {inp.name!r} has no UncertaintySpec; UT requires a Normal std"
+                )
+            params = inp.uncertainty.params
+            if "std" in params:
+                std = float(params["std"])
+            elif inp.uncertainty.bounds is not None:
+                lo, hi = inp.uncertainty.bounds
+                std = (hi - lo) / 6.0  # ~99.7% of Normal inside [-3σ, 3σ]
             else:
-                variances.append((abs(inp.nominal) * 0.01) ** 2)
+                raise MissingUncertaintyError(
+                    f"Input {inp.name!r} requires either params.std or bounds for UT covariance"
+                )
+            variances.append(std**2)
         cov = np.diag(variances)
 
         ut = UnscentedTransform()
@@ -199,21 +214,21 @@ class UQPropagator:
         ]
 
         param_names = [inp.name for inp in continuous]
-        bounds = []
+        bounds: list[tuple[float, float]] = []
         for inp in continuous:
             if inp.bounds:
                 bounds.append(inp.bounds)
             elif inp.uncertainty and inp.uncertainty.bounds:
                 bounds.append(inp.uncertainty.bounds)
-            else:
-                std = (
-                    inp.uncertainty.params.get("std", abs(inp.nominal) * 0.1)
-                    if inp.uncertainty
-                    else abs(inp.nominal) * 0.1
-                )
+            elif inp.uncertainty and "std" in inp.uncertainty.params:
+                std = float(inp.uncertainty.params["std"])
                 bounds.append((inp.nominal - 3 * std, inp.nominal + 3 * std))
+            else:
+                raise MissingUncertaintyError(
+                    f"Input {inp.name!r} needs explicit bounds or a Normal std for PCE training"
+                )
 
-        pce = PCESurrogate(max_order=self.pce_order)
+        pce = PCESurrogate(max_order=self.pce_order, seed=self.seed)
         pce.fit(model_fn, param_names, bounds)
         pce_result = pce.compute_statistics()
 

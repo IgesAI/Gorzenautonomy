@@ -17,6 +17,10 @@ import httpx
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 
 
+class WeatherDataUnavailableError(RuntimeError):
+    """Raised when Open-Meteo returns a response without the required fields."""
+
+
 @dataclass
 class WindLayer:
     """Wind conditions at a specific altitude."""
@@ -126,40 +130,47 @@ async def fetch_weather(
         resp.raise_for_status()
         data = resp.json()
 
-    current = data.get("current", {})
+    current = data.get("current")
+    if not isinstance(current, dict):
+        raise WeatherDataUnavailableError(
+            f"Open-Meteo response missing 'current' block for ({lat}, {lon}): {data}"
+        )
 
-    temp_c = current.get("temperature_2m", 20.0)
-    pressure = current.get("surface_pressure", 1013.25)
-    humidity = current.get("relative_humidity_2m", 50.0)
-    cloud_cover = current.get("cloud_cover", 0.0)
-    visibility = current.get("visibility", 10000.0)
-    precip = current.get("precipitation", 0.0)
+    def _req(key: str) -> float:
+        if key not in current:
+            raise WeatherDataUnavailableError(
+                f"Open-Meteo response missing field {key!r} for ({lat}, {lon})"
+            )
+        return float(current[key])
+
+    temp_c = _req("temperature_2m")
+    pressure = _req("surface_pressure")
+    humidity = _req("relative_humidity_2m")
+    cloud_cover = _req("cloud_cover")
+    visibility = _req("visibility")
+    precip = _req("precipitation")
+
+    def _wind_layer(height: int, with_gusts: bool) -> WindLayer:
+        speed = _req(f"wind_speed_{height}m")
+        direction = _req(f"wind_direction_{height}m")
+        if with_gusts:
+            gusts = _req(f"wind_gusts_{height}m")
+        else:
+            # Only 10 m layer ships gust data. For higher layers we surface
+            # NaN explicitly rather than fabricating a 1.3x gust factor.
+            gusts = float("nan")
+        return WindLayer(
+            height_m=float(height),
+            speed_ms=speed,
+            direction_deg=direction,
+            gusts_ms=gusts,
+        )
 
     wind_layers = [
-        WindLayer(
-            height_m=10,
-            speed_ms=current.get("wind_speed_10m", 0),
-            direction_deg=current.get("wind_direction_10m", 0),
-            gusts_ms=current.get("wind_gusts_10m", 0),
-        ),
-        WindLayer(
-            height_m=80,
-            speed_ms=current.get("wind_speed_80m", 0),
-            direction_deg=current.get("wind_direction_80m", 0),
-            gusts_ms=current.get("wind_speed_80m", 0) * 1.3,
-        ),
-        WindLayer(
-            height_m=120,
-            speed_ms=current.get("wind_speed_120m", 0),
-            direction_deg=current.get("wind_direction_120m", 0),
-            gusts_ms=current.get("wind_speed_120m", 0) * 1.3,
-        ),
-        WindLayer(
-            height_m=180,
-            speed_ms=current.get("wind_speed_180m", 0),
-            direction_deg=current.get("wind_direction_180m", 0),
-            gusts_ms=current.get("wind_speed_180m", 0) * 1.3,
-        ),
+        _wind_layer(10, with_gusts=True),
+        _wind_layer(80, with_gusts=False),
+        _wind_layer(120, with_gusts=False),
+        _wind_layer(180, with_gusts=False),
     ]
 
     density_alt = _compute_density_altitude(temp_c, pressure, elevation_m)

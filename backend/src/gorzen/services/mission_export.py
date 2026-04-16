@@ -25,6 +25,43 @@ def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return _EARTH_R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
+def _qgc_params_for(wp: Waypoint) -> list[Any]:
+    """Build the 7-param vector for a QGC/MAVLink mission item, with VTOL-aware defaults."""
+    cmd = _wp_type_to_mav_cmd(wp.wp_type)
+    if cmd == MAV_CMD_DO_VTOL_TRANSITION:
+        # DO_VTOL_TRANSITION: param1=target MAV_VTOL_STATE, param2=immediate(1)/wait(0).
+        return [
+            float(_vtol_transition_target(wp.wp_type)),
+            1.0,
+            0.0,
+            float("nan"),
+            wp.latitude_deg,
+            wp.longitude_deg,
+            wp.altitude_m,
+        ]
+    if cmd in (MAV_CMD_NAV_VTOL_TAKEOFF, MAV_CMD_NAV_VTOL_LAND):
+        # param1 reserved / param2 = transition heading mode (0=vehicle default),
+        # param4 = yaw angle (NaN = use default heading).
+        return [
+            0.0,
+            float(wp.params.get("transition_heading_mode", 0.0)),
+            0.0,
+            float(wp.params.get("yaw_deg", float("nan"))),
+            wp.latitude_deg,
+            wp.longitude_deg,
+            wp.altitude_m,
+        ]
+    return [
+        wp.hold_time_s,
+        wp.acceptance_radius_m,
+        0.0,
+        float("nan"),
+        wp.latitude_deg,
+        wp.longitude_deg,
+        wp.altitude_m,
+    ]
+
+
 def export_qgc_plan(plan: MissionPlan) -> dict[str, Any]:
     """Export mission plan as QGroundControl .plan JSON format.
 
@@ -39,15 +76,7 @@ def export_qgc_plan(plan: MissionPlan) -> dict[str, Any]:
             "command": cmd,
             "doJumpId": wp.sequence + 1,
             "frame": 3,  # MAV_FRAME_GLOBAL_RELATIVE_ALT
-            "params": [
-                wp.hold_time_s,
-                wp.acceptance_radius_m,
-                0,
-                float("nan"),
-                wp.latitude_deg,
-                wp.longitude_deg,
-                wp.altitude_m,
-            ],
+            "params": _qgc_params_for(wp),
             "type": "SimpleItem",
         }
         items.append(item)
@@ -139,22 +168,24 @@ def export_px4_mission(plan: MissionPlan) -> list[dict[str, Any]]:
 
     ``x``/``y`` are **degrees** (latitude/longitude), same contract as the mission
     planner. Upload to the vehicle applies MISSION_ITEM_INT scaling once and uses
-    ``MAV_FRAME_GLOBAL_RELATIVE_ALT_INT``.
+    ``MAV_FRAME_GLOBAL_RELATIVE_ALT_INT``. VTOL transition and VTOL takeoff/land
+    items are emitted with the correct ``param1``-``param4`` layout.
     """
     items: list[dict[str, Any]] = []
 
     for wp in plan.waypoints:
         cmd = _wp_type_to_mav_cmd(wp.wp_type)
+        params = _qgc_params_for(wp)
         item = {
             "seq": wp.sequence,
             "frame": MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
             "command": cmd,
             "current": 1 if wp.sequence == 0 else 0,
             "autocontinue": 1,
-            "param1": wp.hold_time_s,
-            "param2": wp.acceptance_radius_m,
-            "param3": 0.0,
-            "param4": float("nan"),
+            "param1": float(params[0]),
+            "param2": float(params[1]),
+            "param3": float(params[2]),
+            "param4": float(params[3]),
             "x": wp.latitude_deg,
             "y": wp.longitude_deg,
             "z": wp.altitude_m,
@@ -237,25 +268,56 @@ def import_qgc_plan(plan_data: dict[str, Any]) -> MissionPlan:
     return plan
 
 
+# MAVLink command IDs (common.xml).
+MAV_CMD_NAV_WAYPOINT = 16
+MAV_CMD_NAV_LOITER_UNLIM = 17
+MAV_CMD_NAV_RETURN_TO_LAUNCH = 20
+MAV_CMD_NAV_LAND = 21
+MAV_CMD_NAV_TAKEOFF = 22
+MAV_CMD_NAV_VTOL_TAKEOFF = 84
+MAV_CMD_NAV_VTOL_LAND = 85
+MAV_CMD_DO_VTOL_TRANSITION = 3000
+
+# MAV_VTOL_STATE for DO_VTOL_TRANSITION param1.
+MAV_VTOL_STATE_MC = 3
+MAV_VTOL_STATE_FW = 4
+
+
 def _mav_cmd_to_wp_type(cmd: int) -> WaypointType:
     """Map MAVLink command ID back to internal waypoint type."""
     return {
-        22: WaypointType.TAKEOFF,
-        16: WaypointType.NAVIGATE,
-        17: WaypointType.LOITER,
-        20: WaypointType.RETURN_TO_LAUNCH,
-        21: WaypointType.LAND,
+        MAV_CMD_NAV_TAKEOFF: WaypointType.TAKEOFF,
+        MAV_CMD_NAV_WAYPOINT: WaypointType.NAVIGATE,
+        MAV_CMD_NAV_LOITER_UNLIM: WaypointType.LOITER,
+        MAV_CMD_NAV_RETURN_TO_LAUNCH: WaypointType.RETURN_TO_LAUNCH,
+        MAV_CMD_NAV_LAND: WaypointType.LAND,
+        MAV_CMD_NAV_VTOL_TAKEOFF: WaypointType.VTOL_TAKEOFF,
+        MAV_CMD_NAV_VTOL_LAND: WaypointType.VTOL_LAND,
+        MAV_CMD_DO_VTOL_TRANSITION: WaypointType.TRANSITION_TO_FW,
     }.get(cmd, WaypointType.NAVIGATE)
 
 
 def _wp_type_to_mav_cmd(wp_type: WaypointType) -> int:
     """Map internal waypoint type to MAVLink command ID."""
     return {
-        WaypointType.TAKEOFF: 22,
-        WaypointType.NAVIGATE: 16,
-        WaypointType.PHOTO: 16,
-        WaypointType.LOITER: 17,
-        WaypointType.RETURN_TO_LAUNCH: 20,
-        WaypointType.LAND: 21,
-        WaypointType.INSPECT: 16,
-    }.get(wp_type, 16)
+        WaypointType.TAKEOFF: MAV_CMD_NAV_TAKEOFF,
+        WaypointType.NAVIGATE: MAV_CMD_NAV_WAYPOINT,
+        WaypointType.PHOTO: MAV_CMD_NAV_WAYPOINT,
+        WaypointType.LOITER: MAV_CMD_NAV_LOITER_UNLIM,
+        WaypointType.RETURN_TO_LAUNCH: MAV_CMD_NAV_RETURN_TO_LAUNCH,
+        WaypointType.LAND: MAV_CMD_NAV_LAND,
+        WaypointType.INSPECT: MAV_CMD_NAV_WAYPOINT,
+        WaypointType.VTOL_TAKEOFF: MAV_CMD_NAV_VTOL_TAKEOFF,
+        WaypointType.VTOL_LAND: MAV_CMD_NAV_VTOL_LAND,
+        WaypointType.TRANSITION_TO_FW: MAV_CMD_DO_VTOL_TRANSITION,
+        WaypointType.TRANSITION_TO_MC: MAV_CMD_DO_VTOL_TRANSITION,
+        WaypointType.TRANSITION: MAV_CMD_DO_VTOL_TRANSITION,
+    }.get(wp_type, MAV_CMD_NAV_WAYPOINT)
+
+
+def _vtol_transition_target(wp_type: WaypointType) -> int:
+    """param1 for DO_VTOL_TRANSITION — target MAV_VTOL_STATE."""
+    if wp_type == WaypointType.TRANSITION_TO_MC:
+        return MAV_VTOL_STATE_MC
+    # Default (TRANSITION / TRANSITION_TO_FW): go to fixed-wing.
+    return MAV_VTOL_STATE_FW

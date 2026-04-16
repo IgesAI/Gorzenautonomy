@@ -79,7 +79,10 @@ class AirframeModel(SubsystemModel):
 
         v = require_param(conditions, "airspeed_ms", "AirframeModel")
         alt = require_param(conditions, "altitude_m", "AirframeModel")
-        alpha_rad = conditions.get("alpha_rad", 0.05)  # flight-state, computed by controller
+        # AoA must be supplied by the caller (trim solver, controller, or
+        # calibration loop). Prior code silently defaulted to 0.05 rad which
+        # produced plausible-but-wrong lift/drag numbers at arbitrary speeds.
+        alpha_rad = require_param(conditions, "alpha_rad", "AirframeModel")
 
         # Use Environment model's air_density when available (pressure/temp-corrected)
         rho = conditions.get("air_density_kgm3")

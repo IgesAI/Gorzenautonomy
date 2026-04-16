@@ -14,6 +14,12 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      run_sitl:
+        description: "Run PX4 SITL HIL mission test"
+        required: false
+        default: "false"
 
 jobs:
   lint:
@@ -93,3 +99,52 @@ jobs:
           npm ci
           npm run test
           npm run build
+
+  sitl:
+    # Opt-in HIL job: runs a PX4 SITL jMAVSim mission and asserts the
+    # VTOL quadplane arms, takes off, transitions to FW, cruises, lands.
+    # Launched via `workflow_dispatch` with `run_sitl=true` to keep the
+    # normal PR pipeline fast.
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_sitl == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install backend (+ pymavlink, pytest)
+        run: |
+          cd backend
+          pip install -e ".[dev]"
+          pip install pymavlink mavsdk
+
+      - name: Build PX4 SITL (headless)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git ninja-build cmake build-essential genromfs xxd \
+            libxml2-utils astyle python3-numpy python3-toml python3-yaml python3-jinja2 \
+            python3-jsonschema python3-empy
+          git clone --depth 1 --recurse-submodules https://github.com/PX4/PX4-Autopilot.git
+          cd PX4-Autopilot
+          HEADLESS=1 DONT_RUN=1 make px4_sitl_default gazebo-classic
+
+      - name: Run PX4 SITL + Gorzen VTOL mission
+        env:
+          RUN_SITL: "1"
+        run: |
+          cd PX4-Autopilot
+          nohup bash -c "HEADLESS=1 make px4_sitl_default gazebo-classic_standard_vtol" > sitl.log 2>&1 &
+          sleep 60
+          cd ../backend
+          pytest -v -m integration tests_sitl/
+
+  mermaid:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check docs/telemetry.md exists
+        run: test -f docs/telemetry.md

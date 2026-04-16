@@ -38,7 +38,10 @@ def test_ut_partial_failure_reweights() -> None:
             raise RuntimeError("fail_off_nominal")
         return {"y": 1.0}
 
-    ut = UnscentedTransform()
+    # Exercise the degraded "drop + reweight" path explicitly — strict=True
+    # would (correctly) refuse to produce UT statistics from a subset of sigma
+    # points, so we opt into the lossy behaviour for this test.
+    ut = UnscentedTransform(strict_model=False)
     res = ut.propagate(model_fn, ["x"], np.array([1.0]), np.array([[0.25]]))
     assert res.sigma_point_evaluation_failures >= 1
     assert "y" in res.output_mean

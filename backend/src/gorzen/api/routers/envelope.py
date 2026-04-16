@@ -8,6 +8,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from gorzen.api.deps import AuthUserDep
 from gorzen.db import twin_repo
 from gorzen.db.session import get_session
 from gorzen.schemas.envelope import EnvelopeRequest, EnvelopeResponse
@@ -137,6 +138,7 @@ async def compute_default_envelope(request: EnvelopeRequest) -> EnvelopeResponse
 async def twin_endurance_preview(
     twin_id: str,
     session: Annotated[AsyncSession, Depends(get_session)],
+    user: AuthUserDep,
     speed_ms: float = Query(15.0, ge=0.5, le=80.0),
     altitude_m: float = Query(50.0, ge=0.0, le=12000.0),
 ) -> dict[str, float]:
@@ -144,7 +146,8 @@ async def twin_endurance_preview(
     if twin_id == "default":
         twin = VehicleTwin()
     else:
-        twin = await twin_repo.get_vehicle_twin(session, twin_id)
+        scope = None if user.role == "admin" else user.username
+        twin = await twin_repo.get_vehicle_twin(session, twin_id, owner_sub=scope)
         if twin is None:
             raise HTTPException(status_code=404, detail="Twin not found")
     return estimate_endurance_budget_minutes(twin, speed_ms=speed_ms, altitude_m=altitude_m)
@@ -155,8 +158,10 @@ async def compute_twin_envelope(
     twin_id: str,
     request: EnvelopeRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
+    user: AuthUserDep,
 ) -> EnvelopeResponse:
-    twin_model = await twin_repo.get_vehicle_twin(session, twin_id)
+    scope = None if user.role == "admin" else user.username
+    twin_model = await twin_repo.get_vehicle_twin(session, twin_id, owner_sub=scope)
     if twin_model is None:
         raise HTTPException(status_code=404, detail="Twin not found")
 

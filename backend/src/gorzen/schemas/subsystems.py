@@ -438,6 +438,39 @@ class LiftPropulsionConfig(BaseModel):
         advanced=True,
     )
     esc_type: TypedParameter = param("foc", "1", group="esc", display_name="ESC Protocol")
+    esc_resistance_mohm: TypedParameter = param(
+        3.0,
+        "mohm",
+        min_value=0.1,
+        max_value=50,
+        step=0.1,
+        precision=1,
+        group="esc",
+        display_name="ESC On-state Resistance",
+        advanced=True,
+    )
+    esc_switching_loss_pct: TypedParameter = param(
+        2.0,
+        "%",
+        min_value=0,
+        max_value=15,
+        step=0.1,
+        precision=1,
+        group="esc",
+        display_name="ESC Switching Loss",
+        advanced=True,
+    )
+    rotor_rpm_max: TypedParameter = param(
+        12000.0,
+        "rpm",
+        min_value=1000,
+        max_value=30000,
+        step=100.0,
+        precision=0,
+        group="prop",
+        display_name="Rotor Max RPM",
+        advanced=True,
+    )
     prop_ct_static: TypedParameter = param(
         0.1,
         "1",
@@ -822,6 +855,28 @@ class EnergyConfig(BaseModel):
         precision=1,
         group="wiring",
         display_name="Wiring Resistance",
+        advanced=True,
+    )
+    r1_mohm: TypedParameter = param(
+        5.0,
+        "mohm",
+        min_value=0.1,
+        max_value=100,
+        step=0.5,
+        precision=1,
+        group="battery",
+        display_name="1RC Polarisation Resistance",
+        advanced=True,
+    )
+    c1_f: TypedParameter = param(
+        500.0,
+        "F",
+        min_value=1.0,
+        max_value=50000,
+        step=10.0,
+        precision=0,
+        group="battery",
+        display_name="1RC Polarisation Capacitance",
         advanced=True,
     )
     reserve_policy_pct: TypedParameter = param(

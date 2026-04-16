@@ -1,4 +1,17 @@
-"""Base classes for all physics and perception subsystem models."""
+"""Base classes for all physics and perception subsystem models.
+
+Phase 2b contract: ``ModelOutput.get`` no longer silently returns 0.0 for
+missing keys. Callers must either:
+
+* use ``__getitem__`` (``out["key"]``) when the key is required, which raises
+  :class:`KeyError`, or
+* use ``get(key, default)`` with an **explicit** default that makes the
+  synthesised value visible to code review.
+
+The old zero-default behaviour masked missing model outputs as real zeros
+and was the single biggest source of "plausible-looking but fabricated"
+numbers in the envelope pipeline.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +19,10 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
 import numpy as np
+
+
+class MissingModelOutputError(KeyError):
+    """Raised when a required output is absent from a :class:`ModelOutput`."""
 
 
 @dataclass
@@ -18,9 +35,23 @@ class ModelOutput:
     warnings: list[str] = field(default_factory=list)
 
     def __getitem__(self, key: str) -> float:
+        if key not in self.values:
+            raise MissingModelOutputError(
+                f"Model output {key!r} missing; available: {sorted(self.values.keys())}"
+            )
         return self.values[key]
 
+    def require(self, key: str) -> float:
+        """Explicit alias for ``out[key]`` — use in fail-fast code paths."""
+        return self[key]
+
     def get(self, key: str, default: float = 0.0) -> float:
+        """Fetch ``key`` or return ``default``.
+
+        Retained for backward compatibility with call sites that intentionally
+        want a default. Prefer :meth:`require` or ``out[key]`` in new code so
+        missing outputs surface as errors.
+        """
         return self.values.get(key, default)
 
 
@@ -91,7 +122,9 @@ class SubsystemModel(ABC):
             out_minus = self.evaluate(p_minus, conditions)
 
             for i, oname in enumerate(out_names):
-                jac[i, j] = (out_plus.get(oname) - out_minus.get(oname)) / (2 * h)
+                # Missing outputs now raise rather than silently yielding 0.0,
+                # which used to produce nonsensical Jacobian entries.
+                jac[i, j] = (out_plus[oname] - out_minus[oname]) / (2 * h)
 
         return jac
 

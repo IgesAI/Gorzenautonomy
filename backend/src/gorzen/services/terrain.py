@@ -1,7 +1,10 @@
 """Terrain elevation service using Open-Elevation API.
 
-Provides ground elevation lookups from SRTM 30m data for
-AGL-to-MSL conversion and terrain awareness.
+Provides ground elevation lookups from SRTM 30m data for AGL-to-MSL
+conversion and terrain awareness. Phase 2c of the audit reworked this
+module so the safety-critical terrain-clearance check can never silently
+read "0 m above sea level" when the upstream API has nothing to say —
+either it returns a concrete elevation or raises.
 
 Reference: https://open-elevation.com/
 """
@@ -14,6 +17,15 @@ import httpx
 
 
 OPEN_ELEVATION_URL = "https://api.open-elevation.com/api/v1/lookup"
+
+
+class TerrainDataUnavailableError(RuntimeError):
+    """The terrain API returned an empty / malformed response.
+
+    Mission validators / path planners must treat this as a hard failure
+    rather than reading the old ``elevation_m=0.0`` silent default — that
+    default actively killed terrain-clearance checks for mountain routes.
+    """
 
 
 @dataclass
@@ -37,7 +49,12 @@ class TerrainProfile:
 
 
 async def fetch_elevation(lat: float, lon: float) -> TerrainPoint:
-    """Fetch ground elevation for a single point."""
+    """Fetch ground elevation for a single point.
+
+    Raises :class:`TerrainDataUnavailableError` if the API returns no data
+    or the response is missing required fields. Callers that need a safe
+    fallback must handle the exception explicitly.
+    """
     params = {"locations": f"{lat},{lon}"}
     async with httpx.AsyncClient(timeout=10.0) as client:
         resp = await client.get(OPEN_ELEVATION_URL, params=params)
@@ -46,19 +63,32 @@ async def fetch_elevation(lat: float, lon: float) -> TerrainPoint:
 
     results = data.get("results", [])
     if not results:
-        return TerrainPoint(latitude=lat, longitude=lon, elevation_m=0.0)
+        raise TerrainDataUnavailableError(
+            f"Open-Elevation returned no results for ({lat}, {lon})"
+        )
+
+    first = results[0]
+    if "elevation" not in first:
+        raise TerrainDataUnavailableError(
+            f"Open-Elevation response missing 'elevation' field at ({lat}, {lon}): {first}"
+        )
 
     return TerrainPoint(
-        latitude=results[0].get("latitude", lat),
-        longitude=results[0].get("longitude", lon),
-        elevation_m=results[0].get("elevation", 0.0),
+        latitude=float(first.get("latitude", lat)),
+        longitude=float(first.get("longitude", lon)),
+        elevation_m=float(first["elevation"]),
     )
 
 
 async def fetch_elevation_batch(
     points: list[tuple[float, float]],
 ) -> list[TerrainPoint]:
-    """Fetch elevations for multiple points in one request."""
+    """Fetch elevations for multiple points in one request.
+
+    Raises :class:`TerrainDataUnavailableError` if the server does not
+    return an elevation for every requested point — mountains silently
+    becoming sea-level datapoints was the bug we were fixing.
+    """
     if not points:
         return []
 
@@ -71,14 +101,26 @@ async def fetch_elevation_batch(
         data = resp.json()
 
     results = data.get("results", [])
-    return [
-        TerrainPoint(
-            latitude=r.get("latitude", 0),
-            longitude=r.get("longitude", 0),
-            elevation_m=r.get("elevation", 0),
+    if len(results) != len(points):
+        raise TerrainDataUnavailableError(
+            f"Open-Elevation returned {len(results)} results for {len(points)} requested points"
         )
-        for r in results
-    ]
+
+    out: list[TerrainPoint] = []
+    for i, r in enumerate(results):
+        if "elevation" not in r:
+            lat, lon = points[i]
+            raise TerrainDataUnavailableError(
+                f"Open-Elevation response missing elevation at point {i} ({lat}, {lon})"
+            )
+        out.append(
+            TerrainPoint(
+                latitude=float(r.get("latitude", points[i][0])),
+                longitude=float(r.get("longitude", points[i][1])),
+                elevation_m=float(r["elevation"]),
+            )
+        )
+    return out
 
 
 async def fetch_terrain_profile(
@@ -89,6 +131,9 @@ async def fetch_terrain_profile(
     elevations = [p.elevation_m for p in terrain_points]
 
     if not elevations:
+        # ``fetch_elevation_batch`` already raises on missing data for a
+        # non-empty input; this branch handles the empty-input case where
+        # the caller asked for zero points.
         return TerrainProfile(
             points=[],
             min_elevation_m=0,

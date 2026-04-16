@@ -125,12 +125,34 @@ def _check_energy_budget(
         if ah and volts:
             capacity_wh = float(ah) * float(volts)
 
-    # For ICE/hybrid twins expressed in litres + density + heating value
+    # For ICE/hybrid twins expressed in litres + density + heating value.
+    # We **require** density and heating value to be explicit rather than
+    # silently defaulting to gasoline constants — fuel physics varies wildly
+    # between avgas / Jet-A / E85 / methanol / natural gas.
     if capacity_wh == 0.0:
         litres = _get(params, "fuel_system.tank_capacity_l", "fuel_capacity_l", default=0.0)
-        density = _get(params, "fuel_system.fuel_density_kg_l", "fuel_density_kg_l", default=0.81)
-        heating_wh_per_kg = _get(params, "fuel_heating_value_wh_per_kg", default=12_000.0)
         if litres:
+            density = _get(
+                params,
+                "fuel_system.fuel_density_kg_l",
+                "fuel_density_kg_l",
+                default=None,
+            )
+            heating_wh_per_kg = _get(
+                params, "fuel_heating_value_wh_per_kg", default=None
+            )
+            if density is None or heating_wh_per_kg is None:
+                return CheckResult(
+                    name="energy_budget",
+                    passed=False,
+                    value=0.0,
+                    limit=0.0,
+                    unit="Wh",
+                    detail=(
+                        "INSUFFICIENT_DATA: fuel_density_kg_l and "
+                        "fuel_heating_value_wh_per_kg are required for ICE/hybrid energy budget"
+                    ),
+                )
             capacity_wh = float(litres) * float(density) * float(heating_wh_per_kg)
 
     usable_wh = float(capacity_wh) * ENERGY_RESERVE_FACTOR
@@ -334,11 +356,30 @@ def _check_wind_tolerance(
             detail="INSUFFICIENT_DATA: Aircraft wind limit not specified",
         )
 
-    wind_speed = 0.0
-    if environment:
-        wind_speed = float(_get(environment, "wind_speed_ms", "wind.speed_ms", default=0.0) or 0.0)
-        gusts = float(_get(environment, "wind_gusts_ms", "wind.gusts_ms", default=0.0) or 0.0)
-        wind_speed = max(wind_speed, gusts)
+    # Without an environment block we explicitly mark the check INSUFFICIENT_DATA
+    # rather than passing with a synthesised 0 m/s wind (the old behaviour).
+    if not environment:
+        return CheckResult(
+            name="wind_tolerance",
+            passed=False,
+            value=0.0,
+            limit=round(wind_limit_ms, 1),
+            unit="m/s",
+            detail="INSUFFICIENT_DATA: No environment wind data supplied",
+        )
+    wind_speed_raw = _get(environment, "wind_speed_ms", "wind.speed_ms", default=None)
+    if wind_speed_raw is None:
+        return CheckResult(
+            name="wind_tolerance",
+            passed=False,
+            value=0.0,
+            limit=round(wind_limit_ms, 1),
+            unit="m/s",
+            detail="INSUFFICIENT_DATA: wind_speed_ms missing from environment",
+        )
+    wind_speed = float(wind_speed_raw)
+    gusts = float(_get(environment, "wind_gusts_ms", "wind.gusts_ms", default=0.0) or 0.0)
+    wind_speed = max(wind_speed, gusts)
 
     return CheckResult(
         name="wind_tolerance",
@@ -378,8 +419,23 @@ def _check_temperature(
             detail="INSUFFICIENT_DATA: Aircraft temperature limits not specified",
         )
 
-    temp_min_c = float(temp_min) if temp_min is not None else -273.0
-    temp_max_c = float(temp_max) if temp_max is not None else 100.0
+    # Require both ends of the aircraft's operating envelope — using absolute
+    # zero / 100 °C as "missing" sentinels silently passed temperature checks
+    # that should have been rejected as INSUFFICIENT_DATA.
+    if temp_min is None or temp_max is None:
+        return CheckResult(
+            name="temperature",
+            passed=False,
+            value=0.0,
+            limit=0.0,
+            unit="°C",
+            detail=(
+                "INSUFFICIENT_DATA: Aircraft operating_temp_min_c and "
+                "operating_temp_max_c must both be specified"
+            ),
+        )
+    temp_min_c = float(temp_min)
+    temp_max_c = float(temp_max)
 
     if not environment or _get(environment, "temperature_c", "temperature", default=None) is None:
         return CheckResult(

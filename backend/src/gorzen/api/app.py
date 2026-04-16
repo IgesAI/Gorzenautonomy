@@ -20,6 +20,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from gorzen.api.deps import get_current_user
 from gorzen.api.limiter import limiter
+from gorzen.api.observability import mount_metrics_endpoint, setup_tracing
 from gorzen.config import settings
 from gorzen.db.session import engine
 from gorzen.services.mavlink_telemetry import telemetry_service
@@ -133,20 +134,40 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             log.exception("migration_failed", error=str(e))
             raise
 
-    if settings.auth_enabled and settings.admin_password == "change-me":
-        log.warning(
-            "SECURITY: Default admin credentials in use. Set GORZEN_ADMIN_PASSWORD in production."
+    if settings.require_auth and not settings.auth_enabled:
+        raise RuntimeError(
+            "GORZEN_REQUIRE_AUTH=true but GORZEN_JWT_SECRET is empty. "
+            "Set a random 32+ character JWT secret before starting the app."
         )
+    if settings.auth_enabled and not settings.admin_password_hash.strip():
+        if settings.admin_password == "change-me":
+            msg = (
+                "SECURITY: Default admin credentials in use. Set "
+                "GORZEN_ADMIN_PASSWORD_HASH (bcrypt) in production."
+            )
+            if settings.require_auth:
+                raise RuntimeError(msg)
+            log.warning(msg)
+        else:
+            log.warning(
+                "SECURITY: admin_password is plaintext. Set GORZEN_ADMIN_PASSWORD_HASH to a bcrypt hash."
+            )
     if settings.auth_enabled and len(settings.jwt_secret) < 32:
-        log.warning(
-            "SECURITY: JWT secret is too short. Set GORZEN_JWT_SECRET to a random 32+ char string."
-        )
+        msg = "SECURITY: JWT secret is too short (< 32 chars). Generate a random 32+ char secret."
+        if settings.require_auth:
+            raise RuntimeError(msg)
+        log.warning(msg)
 
     try:
         async with engine.begin() as conn:
             await conn.execute(text("SELECT 1"))
         log.info("database_ok")
     except Exception as e:
+        if settings.require_auth:
+            # "Require auth" implies a hardened environment; an unreachable DB
+            # should prevent startup so we don't silently run stateless.
+            log.error("database_unreachable", error=str(e), hint=_DATABASE_SETUP_HINT)
+            raise
         log.error("database_unreachable", error=str(e), hint=_DATABASE_SETUP_HINT)
 
     yield
@@ -174,6 +195,10 @@ def create_app() -> FastAPI:
     app.add_middleware(RequestContextMiddleware)
 
     app.add_middleware(DatabaseUnavailableMiddleware)
+
+    # Observability: Prometheus metrics (/metrics) and optional OTEL spans.
+    mount_metrics_endpoint(app)
+    setup_tracing(app)
 
     app.add_middleware(
         CORSMiddleware,

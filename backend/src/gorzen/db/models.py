@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -18,11 +18,14 @@ class TwinConfigDB(Base):
     """Persisted vehicle twin configuration.
 
     ``twin_uuid`` matches ``VehicleTwin.twin_id`` and is the public API identifier.
+    ``owner_sub`` records the JWT ``sub`` of the creating user; routers use it
+    to scope reads/writes so users cannot touch each other's twins.
     """
 
     __tablename__ = "twin_configs"
 
     twin_uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    owner_sub: Mapped[str] = mapped_column(String(256), nullable=False, index=True, default="dev")
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="")
     version_major: Mapped[int] = mapped_column(Integer, default=0)
@@ -71,7 +74,12 @@ class CalibrationRunDB(Base):
     __tablename__ = "calibration_runs"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    twin_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    twin_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("twin_configs.twin_uuid", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     mission_type: Mapped[str] = mapped_column(String(64), nullable=False)
     config_hash: Mapped[str] = mapped_column(String(32), nullable=False)
     regime: Mapped[str] = mapped_column(String(64), default="")
@@ -88,7 +96,12 @@ class AuditEventDB(Base):
     __tablename__ = "audit_events"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    twin_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    twin_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("twin_configs.twin_uuid", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     event_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     actor: Mapped[str] = mapped_column(String(255), default="system")
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -103,7 +116,13 @@ class TelemetryLogDB(Base):
     __tablename__ = "telemetry_logs"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    twin_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    twin_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("twin_configs.twin_uuid", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    owner_sub: Mapped[str] = mapped_column(String(256), nullable=False, index=True, default="dev")
     source_format: Mapped[str] = mapped_column(String(32), nullable=False)
     vehicle_id: Mapped[str] = mapped_column(String(255), default="")
     firmware_version: Mapped[str] = mapped_column(String(64), default="")
@@ -125,7 +144,13 @@ class PredictionSetDB(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     mission_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
-    twin_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    twin_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("twin_configs.twin_uuid", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    owner_sub: Mapped[str] = mapped_column(String(256), nullable=False, index=True, default="dev")
     predictions: Mapped[dict] = mapped_column(JSON, nullable=False)
     envelope_hash: Mapped[str] = mapped_column(String(64), default="")
     model_version: Mapped[str] = mapped_column(String(64), default="")
@@ -138,7 +163,12 @@ class ValidationRunDB(Base):
     __tablename__ = "validation_runs"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    prediction_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    prediction_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("prediction_sets.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     mission_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     bag_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     actuals: Mapped[dict] = mapped_column(JSON, nullable=False)

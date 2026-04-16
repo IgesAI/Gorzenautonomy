@@ -7,6 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from gorzen.api.deps import AuthUserDep
 from gorzen.db import twin_repo
 from gorzen.db.session import get_session
 from gorzen.schemas.mission import MissionPlanRequest, MissionPlanResponse
@@ -20,8 +21,10 @@ async def create_mission_plan(
     twin_id: str,
     request: MissionPlanRequest,
     session: Annotated[AsyncSession, Depends(get_session)],
+    user: AuthUserDep,
 ) -> MissionPlanResponse:
-    twin = await twin_repo.get_vehicle_twin(session, twin_id)
+    scope = None if user.role == "admin" else user.username
+    twin = await twin_repo.get_vehicle_twin(session, twin_id, owner_sub=scope)
     if twin is None:
         raise HTTPException(status_code=404, detail="Twin not found")
 

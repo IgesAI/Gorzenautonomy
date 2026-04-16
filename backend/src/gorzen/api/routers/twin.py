@@ -8,9 +8,15 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from gorzen.api.deps import AuthUserDep
 from gorzen.db import audit_repo, twin_repo
 from gorzen.db.session import get_session
 from gorzen.schemas.twin_graph import VehicleTwin
+
+
+def _scope(user: Any) -> str | None:
+    """Admins see all twins; everyone else is scoped to ``owner_sub``."""
+    return None if getattr(user, "role", "operator") == "admin" else user.username
 
 router = APIRouter()
 
@@ -135,15 +141,19 @@ async def get_twin_schema() -> dict[str, Any]:
 async def create_twin(
     twin: VehicleTwin,
     session: Annotated[AsyncSession, Depends(get_session)],
+    user: AuthUserDep,
 ) -> VehicleTwin:
+    # Ownership check with scope=None (admin-style) because we haven't created
+    # the row yet — we just need to know if the UUID is taken.
     existing = await twin_repo.get_vehicle_twin(session, str(twin.twin_id))
     if existing is not None:
         raise HTTPException(status_code=409, detail="Twin ID already exists — use PUT to update")
-    result = await twin_repo.upsert_vehicle_twin(session, twin)
+    result = await twin_repo.upsert_vehicle_twin(session, twin, owner_sub=user.username)
     await audit_repo.record_event(
         session,
         event_type="twin.created",
         twin_id=result.twin_id,
+        actor=user.username,
         payload={"name": result.name},
     )
     return result
@@ -152,16 +162,18 @@ async def create_twin(
 @router.get("/", response_model=list[VehicleTwin])
 async def list_twins(
     session: Annotated[AsyncSession, Depends(get_session)],
+    user: AuthUserDep,
 ) -> list[VehicleTwin]:
-    return await twin_repo.list_vehicle_twins(session)
+    return await twin_repo.list_vehicle_twins(session, owner_sub=_scope(user))
 
 
 @router.get("/{twin_id}", response_model=VehicleTwin)
 async def get_twin(
     twin_id: str,
     session: Annotated[AsyncSession, Depends(get_session)],
+    user: AuthUserDep,
 ) -> VehicleTwin:
-    twin = await twin_repo.get_vehicle_twin(session, twin_id)
+    twin = await twin_repo.get_vehicle_twin(session, twin_id, owner_sub=_scope(user))
     if twin is None:
         raise HTTPException(status_code=404, detail="Twin not found")
     return twin
@@ -172,20 +184,25 @@ async def update_twin(
     twin_id: str,
     twin: VehicleTwin,
     session: Annotated[AsyncSession, Depends(get_session)],
+    user: AuthUserDep,
 ) -> VehicleTwin:
     try:
         twin.twin_id = UUID(twin_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid twin ID") from None
-    existing = await twin_repo.get_vehicle_twin(session, twin_id)
+    existing = await twin_repo.get_vehicle_twin(session, twin_id, owner_sub=_scope(user))
     if existing is None:
         raise HTTPException(status_code=404, detail="Twin not found")
     twin = twin.with_hash()
-    result = await twin_repo.upsert_vehicle_twin(session, twin)
+    try:
+        result = await twin_repo.upsert_vehicle_twin(session, twin, owner_sub=user.username)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     await audit_repo.record_event(
         session,
         event_type="twin.updated",
         twin_id=result.twin_id,
+        actor=user.username,
         payload={"name": result.name},
     )
     return result
@@ -195,8 +212,9 @@ async def update_twin(
 async def delete_twin(
     twin_id: str,
     session: Annotated[AsyncSession, Depends(get_session)],
+    user: AuthUserDep,
 ) -> dict[str, str]:
-    ok = await twin_repo.delete_vehicle_twin(session, twin_id)
+    ok = await twin_repo.delete_vehicle_twin(session, twin_id, owner_sub=_scope(user))
     if not ok:
         raise HTTPException(status_code=404, detail="Twin not found")
     try:
@@ -207,6 +225,7 @@ async def delete_twin(
         session,
         event_type="twin.deleted",
         twin_id=uid,
+        actor=user.username,
         payload={"twin_id": twin_id},
     )
     return {"status": "deleted"}

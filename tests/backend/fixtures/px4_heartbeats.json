@@ -1,0 +1,66 @@
+[
+  {
+    "comment": "PX4 MANUAL mode (custom_mode = main_mode=1)",
+    "autopilot": 12,
+    "vehicle_type": 22,
+    "base_mode": 65,
+    "custom_mode": 65536,
+    "expected_mode": "MANUAL"
+  },
+  {
+    "comment": "PX4 POSCTL (main_mode=3)",
+    "autopilot": 12,
+    "vehicle_type": 22,
+    "base_mode": 65,
+    "custom_mode": 196608,
+    "expected_mode": "POSCTL"
+  },
+  {
+    "comment": "PX4 AUTO.MISSION (main=4, sub=4)",
+    "autopilot": 12,
+    "vehicle_type": 22,
+    "base_mode": 221,
+    "custom_mode": 67371008,
+    "expected_mode": "AUTO.MISSION"
+  },
+  {
+    "comment": "PX4 AUTO.RTL (main=4, sub=5)",
+    "autopilot": 12,
+    "vehicle_type": 22,
+    "base_mode": 221,
+    "custom_mode": 84148224,
+    "expected_mode": "AUTO.RTL"
+  },
+  {
+    "comment": "PX4 AUTO.VTOL_TAKEOFF (main=4, sub=10) - critical for VTOL",
+    "autopilot": 12,
+    "vehicle_type": 22,
+    "base_mode": 221,
+    "custom_mode": 168034304,
+    "expected_mode": "AUTO.VTOL_TAKEOFF"
+  },
+  {
+    "comment": "PX4 AUTO.VTOL_LAND (main=4, sub=11)",
+    "autopilot": 12,
+    "vehicle_type": 22,
+    "base_mode": 221,
+    "custom_mode": 184811520,
+    "expected_mode": "AUTO.VTOL_LAND"
+  },
+  {
+    "comment": "PX4 OFFBOARD (main=6)",
+    "autopilot": 12,
+    "vehicle_type": 22,
+    "base_mode": 157,
+    "custom_mode": 393216,
+    "expected_mode": "OFFBOARD"
+  },
+  {
+    "comment": "HEARTBEAT with CUSTOM_MODE_ENABLED unset -> BASE_MODE_ONLY",
+    "autopilot": 12,
+    "vehicle_type": 22,
+    "base_mode": 128,
+    "custom_mode": 0,
+    "expected_mode": "BASE_MODE_ONLY"
+  }
+]

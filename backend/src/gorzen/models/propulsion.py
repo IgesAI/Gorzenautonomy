@@ -161,6 +161,7 @@ class RotorModel(SubsystemModel):
             "blade_count",
             "prop_ct_static",
             "prop_cp_static",
+            "rotor_rpm_max",
         ]
 
     def state_names(self) -> list[str]:
@@ -208,7 +209,10 @@ class RotorModel(SubsystemModel):
         torque_total = torque_per * n_rotors
         power_total = cp_effective * rho * n_rps**3 * D**5 * n_rotors
 
-        rpm_max = 12000.0
+        # Peak rotor RPM now comes from the twin (motor Kv * pack voltage
+        # usually dominates the ceiling). Hardcoded 12000 RPM silently
+        # reported an identical "thrust available" for every aircraft.
+        rpm_max = float(params.get("rotor_rpm_max", 12000.0))
         n_max = rpm_max / 60.0
         thrust_available = ct0 * rho * n_max**2 * D**4 * n_rotors
 

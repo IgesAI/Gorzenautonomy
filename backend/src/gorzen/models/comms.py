@@ -23,6 +23,7 @@ class CommsModel(SubsystemModel):
             "manet_bandwidth_mbps",
             "satcom_available",
             "satcom_bandwidth_mbps",
+            "encoding_bitrate_mbps",
         ]
 
     def state_names(self) -> list[str]:
@@ -63,16 +64,23 @@ class CommsModel(SubsystemModel):
             max_range_km if link_margin > 6.0 else max(0, max_range_km * (link_margin / 6.0))
         )
 
-        # Available bandwidth: use MANET bandwidth, fall back to SATCOM if out of MANET range
+        # Available bandwidth: use MANET bandwidth, fall back to SATCOM if out of MANET range.
+        # When no link is available, bandwidth is zero — don't fabricate a
+        # 0.1 Mbps fallback (the old behaviour silently reported "connected
+        # at trickle" for out-of-coverage links, masking real outages).
         if distance_km <= max_range_km:
             available_bw = manet_bw
         elif satcom > 0.5:
             available_bw = satcom_bw
         else:
-            available_bw = 0.1
+            available_bw = 0.0
 
-        # Compression quality: higher bandwidth = less compression needed
-        if encoding_bitrate <= available_bw:
+        # Compression quality: higher bandwidth = less compression needed.
+        # With no bandwidth at all, the link is simply infeasible.
+        if available_bw <= 0.0:
+            achievable_bitrate = 0.0
+            quality_factor = 0.0
+        elif encoding_bitrate <= available_bw:
             achievable_bitrate = encoding_bitrate
             quality_factor = 90.0
         else:
@@ -80,7 +88,10 @@ class CommsModel(SubsystemModel):
             quality_factor = max(20.0, 90.0 * (available_bw / encoding_bitrate))
 
         comms_latency = 20.0 if distance_km <= max_range_km else 600.0
-        link_feasible = link_margin > 3.0  # HEURISTIC: link margin policy
+        # HEURISTIC: link margin policy (3 dB). Override via a "link_margin_threshold_db"
+        # twin param if you have empirical validation.
+        margin_thresh = float(params.get("link_margin_threshold_db", 3.0))
+        link_feasible = link_margin > margin_thresh and available_bw > 0.0
 
         return ModelOutput(
             values={

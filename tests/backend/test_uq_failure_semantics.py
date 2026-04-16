@@ -65,7 +65,9 @@ def test_ut_records_sigma_point_failures() -> None:
                 raise RuntimeError("deliberate first-call failure")
             return {"y": 1.0}
 
-    ut = UnscentedTransform()
+    # strict_model=False opts into the old "drop + reweight" degraded path
+    # so we can exercise the counting/warning behaviour explicitly.
+    ut = UnscentedTransform(strict_model=False)
     res = ut.propagate(
         _CountingModel(),
         ["x", "y"],

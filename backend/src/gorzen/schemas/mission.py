@@ -18,6 +18,15 @@ class WaypointType(str, Enum):
     RETURN_TO_LAUNCH = "rtl"
     LAND = "land"
     TAKEOFF = "takeoff"
+    # VTOL-specific mission items. Emitted as NAV_VTOL_TAKEOFF (84),
+    # NAV_VTOL_LAND (85), and DO_VTOL_TRANSITION (3000). Required for any
+    # QuadPlane / VTOL aircraft to transition between MC and FW.
+    VTOL_TAKEOFF = "vtol_takeoff"
+    VTOL_LAND = "vtol_land"
+    TRANSITION_TO_FW = "transition_to_fw"
+    TRANSITION_TO_MC = "transition_to_mc"
+    #: Generic legacy transition marker — kept for backward compat. New
+    #: callers should use TRANSITION_TO_FW / TRANSITION_TO_MC.
     TRANSITION = "transition"
 
 

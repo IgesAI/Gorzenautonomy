@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import time
 from typing import Annotated, Any, Literal
 
 from fastapi import (
     APIRouter,
     Depends,
+    Header,
     HTTPException,
     Query,
     UploadFile,
@@ -18,9 +20,10 @@ from fastapi import (
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from gorzen.api.deps import decode_token
+from gorzen.api.deps import AuthUserDep, decode_token
+from gorzen.api.observability import metrics
 from gorzen.config import settings
-from gorzen.db import calibration_repo, telemetry_repo
+from gorzen.db import calibration_repo, parameter_audit_repo, telemetry_repo
 from gorzen.db.session import get_session
 from gorzen.services.flight_log import (
     extract_calibration_data,
@@ -36,6 +39,37 @@ from gorzen.services.px4_params import (
     px4_to_twin,
     twin_to_px4,
 )
+
+
+def _verify_bridge_token(
+    authorization: str | None = Header(default=None),
+    x_bridge_token: str | None = Header(default=None, alias="X-Bridge-Token"),
+) -> None:
+    """Authenticate a ROS 2 bridge (or other service) POSTing telemetry.
+
+    A bridge must present a token in either ``Authorization: Bearer <token>``
+    or ``X-Bridge-Token: <token>``. The expected token is configured via
+    ``GORZEN_BRIDGE_TOKEN`` and defaults to empty — an empty configured token
+    disables this route (returns 503) so a misconfigured server cannot silently
+    accept anonymous telemetry.
+    """
+    expected = settings.bridge_token.strip()
+    if not expected:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Bridge ingest disabled: set GORZEN_BRIDGE_TOKEN to a shared"
+                " secret to enable ROS 2 bridge telemetry injection."
+            ),
+        )
+
+    presented: str | None = x_bridge_token
+    if authorization and authorization.lower().startswith("bearer "):
+        presented = authorization.split(" ", 1)[1].strip()
+    if not presented:
+        raise HTTPException(status_code=401, detail="Bridge token required")
+    if not hmac.compare_digest(presented.encode("utf-8"), expected.encode("utf-8")):
+        raise HTTPException(status_code=401, detail="Invalid bridge token")
 
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB
 
@@ -88,14 +122,99 @@ async def disconnect_drone() -> dict[str, str]:
 @router.get("/status")
 async def get_connection_status() -> dict[str, Any]:
     """Get current connection and telemetry status."""
+    snap = telemetry_service.get_snapshot()
     return {
         "connected": telemetry_service.is_connected,
-        "connection": {
-            "address": telemetry_service.connection.address,
-            "link_profile": telemetry_service.connection.link_profile,
-            "uptime_s": round(telemetry_service.connection.uptime_s, 1),
-            "messages_received": telemetry_service.connection.messages_received,
-        },
+        "connection": snap["connection"],
+    }
+
+
+@router.get("/health")
+async def get_fc_health() -> dict[str, Any]:
+    """Per-sensor health decoded from ``SYS_STATUS``.
+
+    Returns the full 32-bit ``onboard_control_sensors_*`` bitmasks as named
+    flags so the pre-flight checklist can pinpoint which sensor failed
+    (gyro, diff_pressure, prearm_check, etc.).
+    """
+    snap = telemetry_service.get_snapshot()
+    return {
+        "connected": telemetry_service.is_connected,
+        "health_ok": snap["status"]["health_ok"],
+        "sensor_present": snap["health"]["sensor_present"],
+        "sensor_enabled": snap["health"]["sensor_enabled"],
+        "sensor_health": snap["health"]["sensor_health"],
+        "pre_arm_messages": snap["pre_arm_messages"],
+    }
+
+
+def _record_preflight_metric(ready: bool) -> None:
+    metrics.preflight_results_total.inc(status="green" if ready else "red")
+
+
+@router.get("/preflight")
+async def get_preflight_summary() -> dict[str, Any]:
+    """Aggregated pre-flight readiness check suitable for gating /execution/upload.
+
+    Returns a ``ready`` boolean plus per-check reasons. A missing required
+    telemetry field (e.g. no GPS fix yet) is reported as ``blocking``;
+    downstream callers can decide whether to hard-block or warn.
+    """
+    snap = telemetry_service.get_snapshot()
+    checks: list[dict[str, Any]] = []
+
+    def add(name: str, ok: bool, detail: str, blocking: bool = True) -> None:
+        checks.append({"name": name, "passed": ok, "blocking": blocking, "detail": detail})
+
+    add(
+        "link_connected",
+        snap["connection"]["connected"],
+        f"Heartbeat age {snap['connection']['heartbeat_age_s']:.1f}s",
+    )
+    add(
+        "autopilot_identified",
+        snap["connection"]["autopilot"] in ("px4", "ardupilot"),
+        f"autopilot={snap['connection']['autopilot']}",
+    )
+    gps_fix = snap["gps"]["fix_type"]
+    add(
+        "gps_fix_3d_or_better",
+        gps_fix in ("3D_FIX", "DGPS", "RTK_FLOAT", "RTK_FIXED"),
+        f"fix={gps_fix}, sats={snap['gps']['num_satellites']}",
+    )
+    add(
+        "sensors_healthy",
+        snap["status"]["health_ok"] is True,
+        f"health_ok={snap['status']['health_ok']}",
+    )
+    battery_pct = snap["battery"]["remaining_pct"]
+    add(
+        "battery_above_reserve",
+        isinstance(battery_pct, (int, float)) and battery_pct >= 30.0,
+        f"battery={battery_pct}%",
+    )
+    vtol_state = snap["status"]["vtol_state"]
+    add(
+        "vtol_state_known",
+        vtol_state in ("MC", "FW", "TRANSITION_TO_FW", "TRANSITION_TO_MC"),
+        f"vtol_state={vtol_state}",
+        blocking=False,
+    )
+    add(
+        "no_recent_prearm_errors",
+        not any("PREARM" in msg.upper() or "ARM" in msg.upper() for msg in snap["pre_arm_messages"][:4]),
+        f"latest={snap['pre_arm_messages'][:2]}",
+        blocking=False,
+    )
+
+    blocking_failures = [c for c in checks if c["blocking"] and not c["passed"]]
+    ready = not blocking_failures
+    _record_preflight_metric(ready)
+    metrics.telemetry_link_connected.set(1 if snap["connection"]["connected"] else 0)
+    return {
+        "ready": ready,
+        "checks": checks,
+        "blocking_failures": [c["name"] for c in blocking_failures],
     }
 
 
@@ -122,15 +241,15 @@ class BridgeIngestPayload(BaseModel):
     status: dict[str, Any] = {}
 
 
-@internal_router.post("/ingest")
+@internal_router.post("/ingest", dependencies=[Depends(_verify_bridge_token)])
 async def ingest_bridge_telemetry(payload: BridgeIngestPayload) -> dict[str, str]:
     """Accept a telemetry frame from the ROS 2 bridge and inject it into
     the existing telemetry service so the frontend WebSocket sees it.
 
-    This creates a second telemetry path alongside pymavlink, allowing
-    A/B comparison from the same frontend.
+    Authenticated via a bridge token (``Authorization: Bearer`` or
+    ``X-Bridge-Token`` header). The bridge sets ``GORZEN_BRIDGE_TOKEN`` on
+    both sides; without it, anyone on the network could inject telemetry.
     """
-    frame = telemetry_service.frame
     pos = payload.position
     att = payload.attitude
     vel = payload.velocity
@@ -139,35 +258,65 @@ async def ingest_bridge_telemetry(payload: BridgeIngestPayload) -> dict[str, str
     wind = payload.wind
     status = payload.status
 
-    frame.timestamp = payload.timestamp or time.time()
-    frame.latitude_deg = pos.get("latitude_deg", frame.latitude_deg)
-    frame.longitude_deg = pos.get("longitude_deg", frame.longitude_deg)
-    frame.absolute_altitude_m = pos.get("absolute_altitude_m", frame.absolute_altitude_m)
-    frame.relative_altitude_m = pos.get("relative_altitude_m", frame.relative_altitude_m)
-    frame.roll_deg = att.get("roll_deg", frame.roll_deg)
-    frame.pitch_deg = att.get("pitch_deg", frame.pitch_deg)
-    frame.yaw_deg = att.get("yaw_deg", frame.yaw_deg)
-    frame.groundspeed_ms = vel.get("groundspeed_ms", frame.groundspeed_ms)
-    frame.airspeed_ms = vel.get("airspeed_ms", frame.airspeed_ms)
-    frame.climb_rate_ms = vel.get("climb_rate_ms", frame.climb_rate_ms)
-    frame.velocity_north_ms = vel.get("velocity_north_ms", frame.velocity_north_ms)
-    frame.velocity_east_ms = vel.get("velocity_east_ms", frame.velocity_east_ms)
-    frame.velocity_down_ms = vel.get("velocity_down_ms", frame.velocity_down_ms)
-    frame.battery_voltage_v = bat.get("voltage_v", frame.battery_voltage_v)
-    frame.battery_current_a = bat.get("current_a", frame.battery_current_a)
-    frame.battery_remaining_pct = bat.get("remaining_pct", frame.battery_remaining_pct)
-    frame.gps_fix_type = str(gps.get("fix_type", frame.gps_fix_type))
-    frame.gps_num_satellites = int(gps.get("num_satellites", frame.gps_num_satellites))
-    frame.wind_speed_ms = wind.get("speed_ms", frame.wind_speed_ms)
-    frame.wind_direction_deg = wind.get("direction_deg", frame.wind_direction_deg)
-    frame.flight_mode = str(status.get("flight_mode", frame.flight_mode))
-    frame.armed = bool(status.get("armed", frame.armed))
-    frame.in_air = bool(status.get("in_air", frame.in_air))
-    frame.health_ok = bool(status.get("health_ok", frame.health_ok))
+    # Mutate the frame under the service's own lock so concurrent WebSocket /
+    # HTTP readers never see a torn update.
+    with telemetry_service._frame_lock:  # noqa: SLF001 — intentional cross-module mutation
+        frame = telemetry_service.frame
+        frame.timestamp = payload.timestamp or time.time()
+        if "latitude_deg" in pos:
+            frame.latitude_deg = pos["latitude_deg"]
+        if "longitude_deg" in pos:
+            frame.longitude_deg = pos["longitude_deg"]
+        if "absolute_altitude_m" in pos:
+            frame.absolute_altitude_m = pos["absolute_altitude_m"]
+        if "relative_altitude_m" in pos:
+            frame.relative_altitude_m = pos["relative_altitude_m"]
+        if "roll_deg" in att:
+            frame.roll_deg = att["roll_deg"]
+        if "pitch_deg" in att:
+            frame.pitch_deg = att["pitch_deg"]
+        if "yaw_deg" in att:
+            frame.yaw_deg = att["yaw_deg"]
+        if "groundspeed_ms" in vel:
+            frame.groundspeed_ms = vel["groundspeed_ms"]
+        if "airspeed_ms" in vel:
+            frame.airspeed_ms = vel["airspeed_ms"]
+        if "climb_rate_ms" in vel:
+            frame.climb_rate_ms = vel["climb_rate_ms"]
+        if "velocity_north_ms" in vel:
+            frame.velocity_north_ms = vel["velocity_north_ms"]
+        if "velocity_east_ms" in vel:
+            frame.velocity_east_ms = vel["velocity_east_ms"]
+        if "velocity_down_ms" in vel:
+            frame.velocity_down_ms = vel["velocity_down_ms"]
+        if "voltage_v" in bat:
+            frame.battery_voltage_v = bat["voltage_v"]
+        if "current_a" in bat:
+            frame.battery_current_a = bat["current_a"]
+        if "remaining_pct" in bat:
+            frame.battery_remaining_pct = bat["remaining_pct"]
+        if "fix_type" in gps:
+            frame.gps_fix_type = str(gps["fix_type"])
+        if "num_satellites" in gps:
+            frame.gps_num_satellites = int(gps["num_satellites"])
+        if "speed_ms" in wind:
+            frame.wind_speed_ms = wind["speed_ms"]
+        if "direction_deg" in wind:
+            frame.wind_direction_deg = wind["direction_deg"]
+        if "flight_mode" in status:
+            frame.flight_mode = str(status["flight_mode"])
+        if "armed" in status:
+            frame.armed = bool(status["armed"])
+        if "in_air" in status:
+            frame.in_air = bool(status["in_air"])
+        if "health_ok" in status:
+            frame.health_ok = bool(status["health_ok"])
 
-    if not telemetry_service.is_connected:
-        telemetry_service.connection.connected = True
-        telemetry_service.connection.address = f"ros2_bridge:{payload.source}"
+        if not telemetry_service.is_connected:
+            telemetry_service.connection.connected = True
+            telemetry_service.connection.address = f"ros2_bridge:{payload.source}"
+            telemetry_service.connection.last_heartbeat = time.time()
+            telemetry_service.connection.autopilot_name = "ros2_bridge"
 
     return {"status": "ingested", "source": payload.source}
 
@@ -176,19 +325,26 @@ async def ingest_bridge_telemetry(payload: BridgeIngestPayload) -> dict[str, str
 async def telemetry_websocket(ws: WebSocket) -> None:
     """QGC-style WebSocket: polls get_snapshot() directly at 20 Hz.
 
-    No queue, no event, no push loop — the reader thread writes to
-    ``_frame`` and we read from it.  Only sends when new data has
-    arrived (``messages_received`` changed) so idle connections don't
-    burn bandwidth.  Stays open indefinitely.
+    Always requires a token (either a JWT when ``auth_enabled`` or the dev
+    token ``GORZEN_DEV_TOKEN`` when running unauthenticated). This prevents
+    anyone on the network from silently tapping live flight telemetry even
+    when running in dev mode.
     """
+    token = ws.query_params.get("token")
+    if not token:
+        await ws.close(code=4401)
+        return
     if settings.auth_enabled:
-        token = ws.query_params.get("token")
-        if not token:
-            await ws.close(code=4401)
-            return
         try:
             decode_token(token)
         except HTTPException:
+            await ws.close(code=4401)
+            return
+    else:
+        expected = settings.dev_ws_token.strip()
+        if not expected or not hmac.compare_digest(
+            token.encode("utf-8"), expected.encode("utf-8")
+        ):
             await ws.close(code=4401)
             return
     await ws.accept()
@@ -256,29 +412,57 @@ class SyncToFCRequest(BaseModel):
 
 
 @router.post("/params/sync-to-fc")
-async def sync_params_to_fc(request: SyncToFCRequest) -> dict[str, Any]:
+async def sync_params_to_fc(
+    request: SyncToFCRequest,
+    user: AuthUserDep,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, Any]:
     """Write twin parameters to the flight controller.
 
-    Converts twin params to PX4 values, then sends PARAM_SET for each.
-    Requires an active telemetry connection.
+    Each write is recorded in the ``parameter_audit`` table so operators
+    can always trace who pushed what value (old → new) and when.
     """
     if not telemetry_service.is_connected:
         raise HTTPException(400, "No active telemetry connection")
 
-    px4_params = twin_to_px4(request.params)
-    if not px4_params:
+    typed_params = twin_to_px4(request.params)
+    if not typed_params:
         return {"synced": 0, "failed": 0, "params": {}}
-
-    import asyncio
 
     loop = asyncio.get_running_loop()
     results: dict[str, bool] = {}
-    for name, value in px4_params.items():
+    for name, (value, mav_type) in typed_params.items():
+        # Read the old value first so the audit log records the delta.
+        probe = await loop.run_in_executor(
+            None, lambda n=name: telemetry_service.read_param(n)
+        )
+        old_value = probe[0] if probe is not None else None
         ok = await loop.run_in_executor(
             None,
-            lambda n=name, v=float(value): telemetry_service.write_param(n, v),
+            lambda n=name, v=value, t=mav_type: telemetry_service.write_param(n, v, t),
         )
         results[name] = ok
+        metrics.param_writes_total.inc(outcome="success" if ok else "failure")
+        try:
+            await parameter_audit_repo.record_param_write(
+                session,
+                twin_id=None,
+                actor=user.username,
+                param_id=name,
+                old_value=old_value,
+                new_value=value,
+                param_type=int(mav_type),
+                success=bool(ok),
+                context={"source": "sync-to-fc"},
+            )
+        except Exception as exc:
+            # Audit failures must not mask the real operation's result.
+            # Log loudly so operators see persistence regressions.
+            import structlog
+
+            structlog.get_logger("gorzen.audit").error(
+                "param_audit_persist_failed", error=str(exc), param_id=name
+            )
 
     synced = sum(1 for v in results.values() if v)
     return {
@@ -292,12 +476,12 @@ async def sync_params_to_fc(request: SyncToFCRequest) -> dict[str, Any]:
 async def read_params_from_fc() -> dict[str, Any]:
     """Read all parameters from the FC and return as twin params.
 
-    Requires an active telemetry connection.
+    Requires an active telemetry connection. Preserves each parameter's true
+    ``MAV_PARAM_TYPE`` so the subsequent write-back does not silently corrupt
+    INT parameters by sending them as REAL32.
     """
     if not telemetry_service.is_connected:
         raise HTTPException(400, "No active telemetry connection")
-
-    import asyncio
 
     loop = asyncio.get_running_loop()
     fc_params = await loop.run_in_executor(None, telemetry_service.read_all_params)
@@ -307,36 +491,106 @@ async def read_params_from_fc() -> dict[str, Any]:
         "fc_param_count": len(fc_params),
         "twin_params": twin_params,
         "subsystems_affected": list(twin_params.keys()),
+        "raw_fc_params": {k: {"value": v[0], "type": v[1]} for k, v in fc_params.items()},
     }
 
 
+@router.get("/logs/list-from-fc")
+async def list_fc_logs() -> dict[str, Any]:
+    """List on-board logs via ``LOG_REQUEST_LIST``. Requires an active FC link."""
+    if not telemetry_service.is_connected:
+        raise HTTPException(400, "No active telemetry connection")
+    loop = asyncio.get_running_loop()
+    entries = await loop.run_in_executor(None, telemetry_service.list_logs)
+    return {"count": len(entries), "logs": entries}
+
+
+class DownloadFcLogRequest(BaseModel):
+    log_id: int
+    chunk_size: int = 90
+
+
+@router.post("/logs/download-from-fc")
+async def download_fc_log(req: DownloadFcLogRequest) -> dict[str, Any]:
+    """Download a single on-board log over MAVLink.
+
+    Runs the download on the thread-pool because the MAVLink protocol is
+    synchronous. Returns the uLog / DataFlash bytes base64-encoded so
+    clients can persist them; large logs should prefer a future
+    streaming variant.
+    """
+    if not telemetry_service.is_connected:
+        raise HTTPException(400, "No active telemetry connection")
+    import base64
+
+    loop = asyncio.get_running_loop()
+    try:
+        data = await loop.run_in_executor(
+            None,
+            lambda: telemetry_service.download_log(req.log_id, req.chunk_size),
+        )
+    except RuntimeError as exc:
+        raise HTTPException(502, f"Log download failed: {exc}") from exc
+    return {
+        "log_id": req.log_id,
+        "size_bytes": len(data),
+        "base64_data": base64.b64encode(data).decode("ascii"),
+    }
+
+
+@router.post("/logs/erase-fc")
+async def erase_fc_logs() -> dict[str, str]:
+    """Erase all on-board logs (``LOG_ERASE``)."""
+    if not telemetry_service.is_connected:
+        raise HTTPException(400, "No active telemetry connection")
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, telemetry_service.erase_logs)
+    return {"status": "erased"}
+
+
 class GeofenceUploadRequest(BaseModel):
-    polygon: list[list[float]]
+    """PX4 geofence upload request.
+
+    ``polygon`` (legacy) is treated as a single inclusion polygon. Prefer
+    ``inclusion_polygons`` / ``exclusion_polygons`` for the full PX4 fence
+    semantics (the FC's ``GF_*`` params still need to be set separately).
+    """
+
+    polygon: list[list[float]] | None = None
+    inclusion_polygons: list[list[list[float]]] | None = None
+    exclusion_polygons: list[list[list[float]]] | None = None
 
 
 @router.post("/geofence/upload")
 async def upload_geofence(request: GeofenceUploadRequest) -> dict[str, Any]:
-    """Upload a geofence polygon to the flight controller via MAVLink.
-
-    polygon: list of [lat, lon] pairs forming the fence boundary.
-    Requires an active telemetry connection.
-    """
+    """Upload a PX4 geofence (inclusion + exclusion polygons)."""
     if not telemetry_service.is_connected:
         raise HTTPException(400, "No active telemetry connection")
-    if len(request.polygon) < 3:
-        raise HTTPException(400, "Geofence requires at least 3 vertices")
 
-    import asyncio
+    inclusions: list[list[tuple[float, float]]] = []
+    exclusions: list[list[tuple[float, float]]] = []
+    if request.inclusion_polygons:
+        inclusions = [[(p[0], p[1]) for p in poly] for poly in request.inclusion_polygons]
+    if request.exclusion_polygons:
+        exclusions = [[(p[0], p[1]) for p in poly] for poly in request.exclusion_polygons]
+    if request.polygon and not inclusions:
+        inclusions = [[(p[0], p[1]) for p in request.polygon]]
+
+    if not inclusions and not exclusions:
+        raise HTTPException(400, "Provide at least one inclusion or exclusion polygon")
+    for poly in (*inclusions, *exclusions):
+        if len(poly) < 3:
+            raise HTTPException(400, "Each geofence polygon needs at least 3 vertices")
 
     loop = asyncio.get_running_loop()
-    fence_tuples = [(p[0], p[1]) for p in request.polygon]
     ok = await loop.run_in_executor(
         None,
-        lambda: telemetry_service.upload_geofence(fence_tuples),
+        lambda: telemetry_service.upload_geofence_px4(inclusions, exclusions),
     )
     return {
         "success": ok,
-        "vertices": len(request.polygon),
+        "inclusion_polygons": len(inclusions),
+        "exclusion_polygons": len(exclusions),
         "message": "Geofence uploaded to FC" if ok else "Geofence upload failed",
     }
 

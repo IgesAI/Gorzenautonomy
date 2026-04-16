@@ -1,15 +1,44 @@
 """PX4 parameter mapping service.
 
-Maps Gorzen digital twin parameters to/from PX4 autopilot parameters.
-Enables syncing twin configuration with real drone config.
+Maps Gorzen digital twin parameters to/from PX4 autopilot parameters and
+preserves the true ``MAV_PARAM_TYPE`` for each mapping so writes to the FC
+round-trip correctly (sending INT params as REAL32 silently fails on both
+PX4 and ArduPilot).
 """
 
 from __future__ import annotations
 
 import ast
+import logging
 import operator
 from dataclasses import dataclass
 from typing import Any
+
+logger = logging.getLogger(__name__)
+
+
+# MAV_PARAM_TYPE values from common.xml
+MAV_PARAM_TYPE_UINT8 = 1
+MAV_PARAM_TYPE_INT8 = 2
+MAV_PARAM_TYPE_UINT16 = 3
+MAV_PARAM_TYPE_INT16 = 4
+MAV_PARAM_TYPE_UINT32 = 5
+MAV_PARAM_TYPE_INT32 = 6
+MAV_PARAM_TYPE_REAL32 = 9
+MAV_PARAM_TYPE_REAL64 = 10
+
+INTEGER_PARAM_TYPES = {
+    MAV_PARAM_TYPE_UINT8,
+    MAV_PARAM_TYPE_INT8,
+    MAV_PARAM_TYPE_UINT16,
+    MAV_PARAM_TYPE_INT16,
+    MAV_PARAM_TYPE_UINT32,
+    MAV_PARAM_TYPE_INT32,
+}
+
+
+class ParamTransformError(ValueError):
+    """Raised when a twin<->PX4 transform cannot be evaluated."""
 
 
 def _safe_eval(expr: str) -> float:
@@ -263,66 +292,119 @@ def get_param_map() -> list[dict[str, Any]]:
     ]
 
 
-def twin_to_px4(twin_params: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    """Convert twin parameters to PX4 parameter values.
+def _mav_param_type_for(mapping: ParamMapping) -> int:
+    """Return the ``MAV_PARAM_TYPE`` the FC expects for this mapping."""
+    if mapping.px4_type == "int32":
+        return MAV_PARAM_TYPE_INT32
+    return MAV_PARAM_TYPE_REAL32
+
+
+def _unwrap_value(v: Any) -> float:
+    """Accept either a bare float or a ``(value, param_type)`` tuple from ``read_all_params``."""
+    if isinstance(v, tuple):
+        return float(v[0])
+    return float(v)
+
+
+def twin_to_px4(
+    twin_params: dict[str, dict[str, Any]],
+    strict: bool = False,
+) -> dict[str, tuple[float, int]]:
+    """Convert twin parameters to PX4 ``(value, mav_param_type)`` pairs.
 
     Args:
-        twin_params: {subsystem: {param_name: value}}
+        twin_params: ``{subsystem: {param_name: value}}``.
+        strict: When ``True``, raise :class:`ParamTransformError` on the first
+            transform that fails. When ``False`` (default), log each failure
+            and continue — this was a silent ``except: pass`` previously and
+            would make params disappear without trace.
 
     Returns:
-        {px4_param_name: value}
+        ``{px4_param_name: (value, mav_param_type)}`` ready for PARAM_SET.
     """
-    result: dict[str, Any] = {}
-    cell_count_s = twin_params.get("energy", {}).get("cell_count_s", 12)
+    result: dict[str, tuple[float, int]] = {}
+    energy = twin_params.get("energy", {})
+    cell_count_raw = energy.get("cell_count_s")
+    if cell_count_raw is None:
+        cell_count_raw = 12  # required to resolve {cell_count_s} substitutions
+    try:
+        cell_count_s = float(cell_count_raw)
+    except (TypeError, ValueError) as exc:
+        msg = f"twin_to_px4: cell_count_s must be numeric, got {cell_count_raw!r}: {exc}"
+        if strict:
+            raise ParamTransformError(msg) from exc
+        logger.warning(msg)
+        cell_count_s = 12.0
 
     for m in PX4_PARAM_MAP:
         val = twin_params.get(m.twin_subsystem, {}).get(m.twin_param)
         if val is None:
             continue
 
-        # Simple expression eval with variable substitution
-        expr = m.transform_to_px4.replace("{v}", str(float(val)))
-        expr = expr.replace("{cell_count_s}", str(float(cell_count_s)))
         try:
+            expr = m.transform_to_px4.replace("{v}", str(float(val)))
+            expr = expr.replace("{cell_count_s}", str(cell_count_s))
             px4_val = _safe_eval(expr)
-            if m.px4_type == "int32":
-                px4_val = int(round(px4_val))
-            result[m.px4_param] = px4_val
-        except Exception:
-            pass
+        except Exception as exc:
+            msg = (
+                f"twin_to_px4: failed to transform {m.twin_subsystem}.{m.twin_param}"
+                f"={val!r} -> {m.px4_param}: {exc}"
+            )
+            if strict:
+                raise ParamTransformError(msg) from exc
+            logger.warning(msg)
+            continue
+
+        mav_type = _mav_param_type_for(m)
+        if mav_type in INTEGER_PARAM_TYPES:
+            px4_val = float(int(round(px4_val)))
+        result[m.px4_param] = (px4_val, mav_type)
 
     return result
 
 
-def px4_to_twin(px4_params: dict[str, Any]) -> dict[str, dict[str, Any]]:
+def px4_to_twin(
+    px4_params: dict[str, Any],
+    strict: bool = False,
+) -> dict[str, dict[str, Any]]:
     """Convert PX4 parameters back to twin parameter values.
 
     Args:
-        px4_params: {px4_param_name: value}
+        px4_params: ``{px4_param_name: value}`` or ``{px4_param_name: (value, type)}``
+            (tuple form is what :meth:`MAVLinkTelemetryService.read_all_params`
+            returns).
+        strict: When ``True``, raise on any failed transform.
 
     Returns:
-        {subsystem: {param_name: value}}
+        ``{subsystem: {param_name: value}}``.
     """
     result: dict[str, dict[str, Any]] = {}
-    cell_count_s = 12
-    # Try to get cell count first
+    cell_count_s = 12.0
     if "BAT1_N_CELLS" in px4_params:
-        cell_count_s = int(px4_params["BAT1_N_CELLS"])
+        cell_count_s = _unwrap_value(px4_params["BAT1_N_CELLS"])
 
     for m in PX4_PARAM_MAP:
-        val = px4_params.get(m.px4_param)
-        if val is None:
+        raw = px4_params.get(m.px4_param)
+        if raw is None:
+            continue
+        try:
+            val = _unwrap_value(raw)
+            expr = m.transform_from_px4.replace("{v}", str(val))
+            expr = expr.replace("{cell_count_s}", str(cell_count_s))
+            twin_val = _safe_eval(expr)
+        except Exception as exc:
+            msg = (
+                f"px4_to_twin: failed to transform {m.px4_param}={raw!r} -> "
+                f"{m.twin_subsystem}.{m.twin_param}: {exc}"
+            )
+            if strict:
+                raise ParamTransformError(msg) from exc
+            logger.warning(msg)
             continue
 
-        expr = m.transform_from_px4.replace("{v}", str(float(val)))
-        expr = expr.replace("{cell_count_s}", str(float(cell_count_s)))
-        try:
-            twin_val = _safe_eval(expr)
-            if m.twin_subsystem not in result:
-                result[m.twin_subsystem] = {}
-            result[m.twin_subsystem][m.twin_param] = twin_val
-        except Exception:
-            pass
+        if m.twin_subsystem not in result:
+            result[m.twin_subsystem] = {}
+        result[m.twin_subsystem][m.twin_param] = twin_val
 
     return result
 

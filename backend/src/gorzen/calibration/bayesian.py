@@ -1,17 +1,27 @@
 """Kennedy-O'Hagan Bayesian calibration with GP discrepancy.
 
-Calibrates physics model parameters while explicitly modeling the discrepancy
-between model predictions and observations using a Gaussian Process.
+Calibrates physics model parameters while explicitly modeling the
+discrepancy between model predictions and observations using a Gaussian
+Process. Phase 2c hardening: the likelihood no longer silently returns
+``1e10`` on model exceptions — numerical bugs propagate through the
+optimiser so they get fixed instead of being labelled "bad fit".
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Callable
 
 import numpy as np
 import scipy.linalg
 from scipy.optimize import minimize
+
+logger = logging.getLogger(__name__)
+
+
+class CalibrationError(RuntimeError):
+    """Raised when the calibration optimiser cannot proceed."""
 
 
 @dataclass
@@ -128,6 +138,7 @@ class BayesianCalibrator:
         param_names: list[str],
         param_priors: dict[str, tuple[float, float]],
         n_posterior_samples: int = 500,
+        tolerate_model_failures: bool = False,
     ):
         """
         Args:
@@ -135,11 +146,17 @@ class BayesianCalibrator:
             param_names: names of calibration parameters (theta)
             param_priors: {name: (mean, std)} for prior distributions
             n_posterior_samples: number of posterior samples to draw
+            tolerate_model_failures: When False (default), any exception from
+                ``physics_model`` propagates to the caller. When True, such
+                samples contribute ``-log_posterior = 1e10`` (the legacy
+                behaviour) — useful for exploratory calibration on unstable
+                models, *never* for safety-of-flight parameter fits.
         """
         self.physics_model = physics_model
         self.param_names = param_names
         self.param_priors = param_priors
         self.n_samples = n_posterior_samples
+        self.tolerate_model_failures = tolerate_model_failures
 
     def calibrate(
         self,
@@ -170,11 +187,18 @@ class BayesianCalibrator:
             # Likelihood
             try:
                 pred = self.physics_model(X_obs, theta)
-                residuals = y_obs - pred
-                sigma_n = np.std(residuals) + 1e-6
-                log_lik = -0.5 * np.sum((residuals / sigma_n) ** 2) - n_obs * np.log(sigma_n)
-            except Exception:
-                return 1e10
+            except Exception as exc:
+                if self.tolerate_model_failures:
+                    logger.warning(
+                        "physics_model failed at theta=%s (%s); returning penalty",
+                        theta,
+                        exc,
+                    )
+                    return 1e10
+                raise
+            residuals = y_obs - pred
+            sigma_n = np.std(residuals) + 1e-6
+            log_lik = -0.5 * np.sum((residuals / sigma_n) ** 2) - n_obs * np.log(sigma_n)
 
             return -(log_prior + log_lik)
 

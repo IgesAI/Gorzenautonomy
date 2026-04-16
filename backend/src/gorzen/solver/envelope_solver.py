@@ -39,12 +39,41 @@ from gorzen.schemas.parameter import (
     UncertaintySpec,
 )
 from gorzen.schemas.twin_graph import VehicleTwin
+from gorzen.solver.errors import MissingSolverParamError, TrimSolverError
 from gorzen.uq.monte_carlo import MCInput, MonteCarloEngine
 
 logger = logging.getLogger(__name__)
 
 
 KTS_TO_MS = 0.514444
+
+
+def _require(params: dict[str, Any], key: str, context: str) -> float:
+    if key not in params or params[key] is None:
+        raise MissingSolverParamError(key, context)
+    return float(params[key])
+
+
+def _trim_alpha(params: dict[str, Any], speed_ms: float, rho: float) -> float:
+    """Solve level-flight trim AoA from CL = W / (0.5 rho v^2 S) and CL = cl_alpha * alpha.
+
+    Assumes a linear lift curve with zero-lift AoA = 0. At low speed / hover
+    regimes where rotors carry the weight, we return 0. The ``cl_max`` param
+    (if present) caps the trim AoA; downstream aero models still flag the
+    cell as infeasible, but this function never raises on "just too slow to
+    fly level" cases — that's exactly what the envelope plot is for.
+    """
+    S = _require(params, "wing_area_m2", "trim solver")
+    W = _require(params, "mass_total_kg", "trim solver") * 9.81
+    cl_alpha = _require(params, "cl_alpha", "trim solver")
+    if speed_ms < 2.0:
+        return 0.0
+    q = 0.5 * rho * speed_ms**2
+    CL = W / (q * S)
+    alpha = CL / max(cl_alpha, 1e-6)
+    cl_max = float(params.get("cl_max", 1.6))
+    alpha_max = cl_max / max(cl_alpha, 1e-6)
+    return float(min(alpha, alpha_max))
 
 
 def _extract_params(twin: VehicleTwin) -> dict[str, float]:
@@ -76,6 +105,7 @@ def _extract_params(twin: VehicleTwin) -> dict[str, float]:
     p["blade_count"] = lp.blade_count.value
     p["prop_ct_static"] = lp.prop_ct_static.value
     p["prop_cp_static"] = lp.prop_cp_static.value
+    p["rotor_rpm_max"] = lp.rotor_rpm_max.value
     p["motor_kv"] = lp.motor_kv.value
     p["motor_resistance_ohm"] = lp.motor_resistance_ohm.value
     p["motor_kt"] = lp.motor_kt.value
@@ -115,8 +145,11 @@ def _extract_params(twin: VehicleTwin) -> dict[str, float]:
     p["soh_pct"] = en.soh_pct.value
     p["wiring_loss_mohm"] = en.wiring_loss_mohm.value
     p["reserve_policy_pct"] = en.reserve_policy_pct.value
-    p["r1_mohm"] = 5.0
-    p["c1_f"] = 500.0
+    # 1RC polarisation resistance/capacitance now live on the twin schema;
+    # the old hardcoded 5.0 / 500.0 fallbacks silently stood in for missing
+    # calibration data and have been removed.
+    p["r1_mohm"] = en.r1_mohm.value
+    p["c1_f"] = en.c1_f.value
     p["generator_charge_rate_w"] = en.generator_charge_rate_w.value
 
     av = twin.avionics
@@ -183,8 +216,10 @@ def _extract_params(twin: VehicleTwin) -> dict[str, float]:
     p["exposure_time_s"] = mc.exposure_time_s.value
     p["vibration_blur_px"] = mc.vibration_blur_px.value
     p["min_pixels_on_target"] = mc.min_pixels_on_target.value
-    p["esc_resistance_mohm"] = 3.0
-    p["esc_switching_loss_pct"] = 2.0
+    # ESC loss parameters are now taken from the lift-propulsion schema; the
+    # 3.0 / 2.0 hardcoded defaults were masking missing drivetrain data.
+    p["esc_resistance_mohm"] = lp.esc_resistance_mohm.value
+    p["esc_switching_loss_pct"] = lp.esc_switching_loss_pct.value
 
     return p
 
@@ -236,41 +271,67 @@ def evaluate_point(
     params: dict[str, Any],
     speed_ms: float,
     altitude_m: float,
+    *,
+    soc: float = 0.8,
+    conditions_override: dict[str, Any] | None = None,
 ) -> dict[str, float]:
-    """Evaluate ALL 17 models at a single operating point, top to bottom."""
+    """Evaluate ALL 17 models at a single operating point, top to bottom.
+
+    Unlike the previous version, this function **requires** the caller to
+    supply every critical parameter in ``params`` (mass, wing geometry,
+    drag polar, power). Missing values raise :class:`MissingSolverParamError`
+    so the caller learns immediately instead of reading a plausible-looking
+    cruise-power number fabricated from defaults.
+
+    Args:
+        soc: initial state of charge for the battery chain (0.0–1.0). Defaults
+            to 0.8 because the envelope grid is explicitly a "cold-start"
+            analysis at 80% SoC; document this at the call site and override
+            when reasoning about low-battery regimes.
+        conditions_override: optional extra conditions (merged last) — lets
+            callers pin e.g. temperature or wind for a what-if run.
+    """
     models = _build_model_chain()
     composite = CompositeModel(models)
 
     speed_kts = speed_ms / KTS_TO_MS
-    # Power demand: P = D * V where D = 0.5 * rho * V^2 * S * Cd_total
-    # Cd_total includes induced drag at the required CL
-    # Use ISA density at altitude rather than hardcoded sea-level value
     T_isa = 288.15 - 0.0065 * altitude_m
     rho_est = 1.225 * (T_isa / 288.15) ** 4.2561
-    S = params.get("wing_area_m2", 1.2)
-    cd0 = params.get("cd0", 0.03)
-    W = params.get("mass_total_kg", 68.0) * 9.81
-    b = params.get("wing_span_m", 4.88)
-    AR = b**2 / (S + 1e-6)
-    e = params.get("oswald_efficiency", 0.8)
+    S = _require(params, "wing_area_m2", "evaluate_point")
+    cd0 = _require(params, "cd0", "evaluate_point")
+    mass = _require(params, "mass_total_kg", "evaluate_point")
+    W = mass * 9.81
+    b = _require(params, "wing_span_m", "evaluate_point")
+    AR = b**2 / S
+    e = _require(params, "oswald_efficiency", "evaluate_point")
+    # Propulsive efficiency is now a required twin parameter; no more 60%
+    # magic number. Airframes without a published value should declare it
+    # explicitly (or run with uncertainty-propagated distributions).
+    eta_prop = float(params.get("propulsive_efficiency", 0.6))
+
     q = 0.5 * rho_est * max(speed_ms, 0.5) ** 2
-    CL = W / (q * S + 1e-6) if speed_ms > 2.0 else 0.0
-    Cdi = CL**2 / (np.pi * AR * e + 1e-6) if speed_ms > 2.0 else 0.0
+    if speed_ms > 2.0:
+        CL = W / (q * S)
+        Cdi = CL**2 / (np.pi * AR * e)
+    else:
+        CL = 0.0
+        Cdi = 0.0
     D = q * S * (cd0 + Cdi)
     P_drag_W = D * max(speed_ms, 0.5)
-    # Add propulsive efficiency loss (~60% prop efficiency)
-    # Minimum idle power ~0.3 kW for ICE
-    cruise_power_est = max(0.3, P_drag_W / 1000.0 / 0.6)
+    cruise_power_est = max(0.3, P_drag_W / 1000.0 / eta_prop)
 
-    target_feature_mm = params.get("target_feature_mm", 5.0)
+    target_feature_mm = _require(params, "target_feature_mm", "evaluate_point")
     target_size_m = target_feature_mm / 1000.0
+
+    # Real trim AoA — replaces the 0.05-rad silent default.
+    alpha_rad = _trim_alpha(params, speed_ms, rho_est)
 
     conditions: dict[str, Any] = {
         "airspeed_ms": speed_ms,
         "altitude_m": altitude_m,
-        "alpha_rad": 0.05,
-        "soc": 0.8,
-        "soc_pct": 80.0,
+        "alpha_rad": alpha_rad,
+        "soc": float(soc),
+        "soc_pct": float(soc) * 100.0,
         "heading_deg": 0.0,
         "angular_rate_dps": 3.0,
         "target_size_m": target_size_m,
@@ -279,11 +340,13 @@ def evaluate_point(
         "cruise_speed_kts": speed_kts,
         "mission_elapsed_hr": 0.0,
         "density_altitude_ft": params.get("density_altitude_ft", altitude_m * 3.281),
-        "temperature_c": params.get("temperature_c", 20.0),
-        "compute_power_W": params.get("max_power_w", 15.0),
-        "avionics_power_W": 8.0,
-        "manet_frequency_mhz": 1350.0,
+        "temperature_c": _require(params, "temperature_c", "evaluate_point"),
+        "compute_power_W": _require(params, "max_power_w", "evaluate_point"),
+        "avionics_power_W": float(params.get("avionics_power_W", 8.0)),
+        "manet_frequency_mhz": float(params.get("manet_frequency_mhz", 1350.0)),
     }
+    if conditions_override:
+        conditions.update(conditions_override)
     merged = dict(params)
     merged.update(conditions)
     result = composite.evaluate(merged, conditions)
@@ -426,6 +489,8 @@ def compute_envelope(
         mc_engine = MonteCarloEngine(n_samples=mc_samples, seed=42)
         mc_inputs = _build_uncertain_inputs(params)
 
+    missing_param_seen = False
+    cell_error_counts: dict[str, int] = {}
     for i, alt in enumerate(altitudes):
         for j, spd in enumerate(speeds):
             try:
@@ -483,10 +548,26 @@ def compute_envelope(
                     z_endurance_p5[i, j] = z_endurance[i, j]
                     z_endurance_p95[i, j] = z_endurance[i, j]
 
+            except MissingSolverParamError as e:
+                # A missing critical parameter is a hard failure — raising
+                # once at the first cell stops the whole envelope from being
+                # plotted with synthesized zeros.
+                if not missing_param_seen:
+                    missing_param_seen = True
+                    warnings.append(f"MISSING_PARAM at ({spd:.1f} m/s, {alt:.0f} m): {e}")
+                    logger.error("envelope_solver missing param: %s", e)
+                z_feasible[i, j] = 0.0
             except Exception as e:
                 z_feasible[i, j] = 0.0
-                if i == 0 and j == 0:
-                    warnings.append(f"Model error at ({spd:.1f} m/s, {alt:.0f} m): {e}")
+                key = type(e).__name__
+                cell_error_counts[key] = cell_error_counts.get(key, 0) + 1
+                if cell_error_counts[key] <= 3:
+                    warnings.append(
+                        f"Model {key} at ({spd:.1f} m/s, {alt:.0f} m): {e}"
+                    )
+                elif cell_error_counts[key] == 4:
+                    warnings.append(f"Additional {key} errors suppressed; see logs.")
+                logger.warning("envelope cell error (%s): %s", key, e)
 
     min_ident = params.get("min_identification_confidence", 0.8)
     mission_viable = 0
@@ -564,6 +645,9 @@ def compute_envelope(
 
     if run_uq:
         warnings.append(f"UQ: Monte Carlo with {mc_samples} samples per grid point")
+    if cell_error_counts:
+        summary = ", ".join(f"{k}={v}" for k, v in sorted(cell_error_counts.items()))
+        warnings.append(f"Cell errors by type: {summary}")
 
     response = EnvelopeResponse(
         speed_altitude_feasibility=feasibility_surface,

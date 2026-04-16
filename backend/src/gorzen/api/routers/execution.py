@@ -13,7 +13,13 @@ from gorzen.services.mavlink_mission_coords import (
     normalize_mission_frame_for_raw_upload,
     normalize_xy_to_mavlink_int,
 )
+from gorzen.services.mavlink_telemetry import telemetry_service
 from gorzen.services.mavsdk_connection import get_mavsdk_system
+from gorzen.services.preflight import (
+    PreflightBlockedError,
+    build_preflight_result,
+    require_green_light,
+)
 
 router = APIRouter()
 
@@ -53,6 +59,11 @@ class MissionUploadRequest(BaseModel):
 
     connection_url: str = "udp://:14540"  # default: listen for SITL/drone
     mavlink_items: list[dict[str, Any]]
+    #: When True (default), the request runs the pre-flight checklist first
+    #: and refuses the upload if any red blocking check fails. Operators can
+    #: set ``bypass_preflight=True`` for documented dev/test scenarios but
+    #: the API logs the bypass.
+    bypass_preflight: bool = False
 
 
 class MissionUploadResponse(BaseModel):
@@ -98,7 +109,12 @@ def _mavlink_to_raw_item(item: dict[str, Any], seq: int) -> "RawMissionItem":
 
 @router.post("/upload", response_model=MissionUploadResponse)
 async def upload_mission(req: MissionUploadRequest) -> MissionUploadResponse:
-    """Upload mission to vehicle via MAVSDK (MissionRaw for MAVLink compatibility)."""
+    """Upload mission to vehicle via MAVSDK (MissionRaw for MAVLink compatibility).
+
+    Runs the pre-flight checklist first; any red blocking check aborts the
+    upload with 412 Precondition Failed. Set ``bypass_preflight=true`` to
+    override for documented dev/test scenarios.
+    """
     if not HAS_MAVSDK:
         raise HTTPException(
             status_code=501,
@@ -106,6 +122,40 @@ async def upload_mission(req: MissionUploadRequest) -> MissionUploadResponse:
         )
 
     _validate_connection_url(req.connection_url)
+
+    if not req.bypass_preflight:
+        # Rudimentary checklist driven by the live telemetry snapshot.
+        # Mission-level checks (validation / airspace / risk) should be
+        # exercised before this endpoint by the planner UI — we only gate
+        # on the FC-side checks here so a direct API caller can't skip
+        # the most basic safety interlocks.
+        try:
+            snap = telemetry_service.get_snapshot()
+        except Exception:
+            snap = None
+        result = build_preflight_result(
+            telemetry_snapshot=snap,
+            mission_validation=None,
+        )
+        try:
+            require_green_light(result)
+        except PreflightBlockedError as exc:
+            raise HTTPException(
+                status_code=412,
+                detail={
+                    "status": "preflight_blocked",
+                    "blocking_failures": exc.result.blocking_failures,
+                    "items": [
+                        {
+                            "name": i.name,
+                            "status": i.status.value,
+                            "blocking": i.blocking,
+                            "detail": i.detail,
+                        }
+                        for i in exc.result.items
+                    ],
+                },
+            ) from exc
 
     try:
         drone = await get_mavsdk_system(req.connection_url)

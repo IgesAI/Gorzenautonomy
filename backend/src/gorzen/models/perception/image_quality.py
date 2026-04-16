@@ -64,19 +64,23 @@ class ImageQualityModel(SubsystemModel):
             conditions, "compression_quality_factor", "ImageQualityModel"
         )
 
-        # System MTF: lens * sampling * motion blur degradation
-        # LITERATURE: sinc(0.5) for square pixel aperture
-        sampling_mtf = 0.64
+        # System MTF: lens * sampling * motion blur degradation.
+        # LITERATURE: the sampling MTF for a square pixel aperture is
+        # sinc(0.5) = 2/pi ≈ 0.6366. Computed exactly rather than rounded.
+        sampling_mtf = float(np.sinc(0.5))
         blur_mtf = np.sinc(blur_px * 0.5) if blur_px > 0 else 1.0
         blur_mtf = max(blur_mtf, 0.05)
         system_mtf = lens_mtf * sampling_mtf * blur_mtf
 
-        # RER approximation from system MTF
+        # RER approximation from system MTF. Anything > ~0.9 triggers edge
+        # overshoot when the image pipeline sharpens.
         rer = 0.5 + 0.5 * system_mtf
 
-        # SNR model (simplified: photon noise + read noise)
+        # SNR model (photon noise + read noise). ``read_noise_e`` can be
+        # overridden per sensor when calibrated data exist; otherwise we use
+        # a conservative generic 3 e-.
+        read_noise = float(params.get("sensor_read_noise_e", 3.0))
         signal = pixel_um**2 * light_lux * 0.001
-        read_noise = 3.0  # electrons equivalent
         snr = signal / (np.sqrt(signal + read_noise**2) + 1e-6)
         snr_db = 20 * np.log10(snr + 1e-6)
 
@@ -86,14 +90,22 @@ class ImageQualityModel(SubsystemModel):
 
         effective_mtf = system_mtf * compression_mtf
 
+        # Edge overshoot H (GIQE-5). Models sharpening-induced ringing; when
+        # the twin exposes a post-processing sharpening gain we use the
+        # classic H = 0.2*(G-1) approximation from NGA's 2006 technote,
+        # otherwise assume no sharpening (H = 0).
+        G = float(params.get("post_processing_sharpening_gain", 1.0))
+        H = max(0.0, 0.2 * (G - 1.0))
+
         # GIQE 5: NIIRS = c0 + c1*ln(GSD_in) + c2*ln(RER) + c3*(G/SNR) + c4*H
-        # GSD must be in inches; uses natural log (ln); G=1 (no noise gain), H=0 (no sharpening)
+        # GSD must be in inches; uses natural log (ln).
         gsd_inches = gsd_cm / 2.54  # cm -> inches
         niirs = (
             self.GIQE_C0
             + self.GIQE_C1 * np.log(gsd_inches + 1e-9)
             + self.GIQE_C2 * np.log(rer + 1e-9)
-            + self.GIQE_C3 * (1.0 / (snr + 1e-6))
+            + self.GIQE_C3 * (G / (snr + 1e-6))
+            + self.GIQE_C4 * H
         )
         niirs = np.clip(niirs, 0.0, 9.0)
 
