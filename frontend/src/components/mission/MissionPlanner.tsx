@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { CesiumGlobe } from './CesiumGlobe';
 import type { GlobeWaypoint, WeatherOverlay, CesiumViewerApi } from './CesiumGlobe';
-import { api } from '../../api/client';
+import { api, telemetryWsUrl } from '../../api/client';
 import type { MissionValidateResponse } from '../../types/api';
 import { haversineMeters } from '../../utils/geo';
 
@@ -158,16 +158,7 @@ export function MissionPlanner({ sharedLocation, twinId = 'default', missionConf
 
     const open = () => {
       if (stopped) return;
-      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const base = `${proto}//${window.location.host}/api/telemetry/ws`;
-      let url = base;
-      try {
-        const tok = localStorage.getItem('gorzen_token');
-        if (tok) url = `${base}?token=${encodeURIComponent(tok)}`;
-      } catch {
-        /* ignore */
-      }
-      ws = new WebSocket(url);
+      ws = new WebSocket(telemetryWsUrl());
       ws.onmessage = (ev) => {
         try {
           const snap = JSON.parse(ev.data as string) as {
@@ -352,6 +343,28 @@ export function MissionPlanner({ sharedLocation, twinId = 'default', missionConf
   }, [waypoints, homePosition, defaultAlt, defaultSpeed, syncToServer]);
 
   const handleUploadToDrone = useCallback(async () => {
+    // Run the pre-flight checklist first; a red blocking check means the
+    // backend will refuse the MAVSDK upload with 412. Surface it locally so
+    // the operator doesn't have to guess which failure to look at.
+    setStatus('Running pre-flight checks…');
+    try {
+      const pre = await api.telemetry.preflight();
+      if (!pre.ready) {
+        const reasons = pre.blocking_failures.length
+          ? pre.blocking_failures.join(', ')
+          : 'pre-flight not ready';
+        const proceed = window.confirm(
+          `Pre-flight is RED (${reasons}). Upload anyway?`,
+        );
+        if (!proceed) {
+          setStatus(`Upload blocked: ${reasons}`);
+          setTimeout(() => setStatus(null), 5000);
+          return;
+        }
+      }
+    } catch {
+      /* backend may not be connected to an FC — fall through */
+    }
     setStatus('Uploading...');
     try {
       const res = await api.missionPlan.uploadToDrone();

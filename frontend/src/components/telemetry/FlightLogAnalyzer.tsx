@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { GlassPanel } from '../layout/GlassPanel';
 import { chartStyles } from '../../theme/chartStyles';
 import { api } from '../../api/client';
+import type { FcLogEntry } from '../../types/api';
 
 interface LogSummary {
   filename: string;
@@ -181,6 +182,8 @@ export function FlightLogAnalyzer() {
 
   return (
     <div className="h-full overflow-y-auto space-y-3 p-3">
+      <FcLogsPanel onDownloaded={() => api.telemetry.listLogs().then((logs) => setPreviousLogs(logs as unknown as LogRecord[])).catch(() => {})} />
+
       {/* Upload */}
       <GlassPanel padding="p-4">
         <div className="flex items-center justify-between mb-3">
@@ -453,5 +456,140 @@ export function FlightLogAnalyzer() {
         </>
       )}
     </div>
+  );
+}
+
+// ─── FC on-board log manager ─────────────────────────────────────────────────
+
+function FcLogsPanel({ onDownloaded }: { onDownloaded: () => void }) {
+  const [logs, setLogs] = useState<FcLogEntry[] | null>(null);
+  const [listing, setListing] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
+  const [erasing, setErasing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    setListing(true);
+    setError(null);
+    try {
+      const res = await api.telemetry.listLogsFromFc();
+      setLogs(res.logs);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to list FC logs');
+      setLogs([]);
+    } finally {
+      setListing(false);
+    }
+  }, []);
+
+  const download = async (log: FcLogEntry) => {
+    setDownloadingId(log.id);
+    setError(null);
+    try {
+      const res = await api.telemetry.downloadLogFromFc(log.id);
+      // Decode base64 -> Blob and trigger a browser download.
+      const binary = atob(res.base64_data);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `fc_log_${log.id}.ulg`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      onDownloaded();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Download failed');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const erase = async () => {
+    if (!window.confirm('Erase ALL on-board logs on the FC? This cannot be undone.')) return;
+    setErasing(true);
+    setError(null);
+    try {
+      await api.telemetry.eraseFcLogs();
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erase failed');
+    } finally {
+      setErasing(false);
+    }
+  };
+
+  const totalBytes = logs?.reduce((sum, l) => sum + l.size_bytes, 0) ?? 0;
+
+  return (
+    <GlassPanel padding="p-4">
+      <div className="flex items-center justify-between mb-2.5">
+        <h3 className={chartStyles.title}>On-Board Logs</h3>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={refresh}
+            disabled={listing}
+            className="glass-button text-[10px] py-1 px-2.5 font-mono tracking-widest disabled:opacity-40"
+          >
+            {listing ? 'LISTING…' : 'LIST'}
+          </button>
+          <button
+            onClick={erase}
+            disabled={erasing || !logs || logs.length === 0}
+            className="glass-button text-[10px] py-1 px-2.5 font-mono tracking-widest text-red-400 border-red-500/20 disabled:opacity-40"
+          >
+            {erasing ? 'ERASING…' : 'ERASE ALL'}
+          </button>
+        </div>
+      </div>
+
+      {logs == null ? (
+        <div className="text-[10px] text-white/35">
+          Connect to a flight controller and click <span className="font-mono text-white/60">LIST</span> to pull
+          on-board logs via MAVLink (LOG_REQUEST_LIST / LOG_REQUEST_DATA).
+        </div>
+      ) : logs.length === 0 ? (
+        <div className="text-[10px] text-white/35">No on-board logs reported.</div>
+      ) : (
+        <>
+          <div className="text-[9px] font-mono text-white/30 mb-1.5">
+            {logs.length} log{logs.length === 1 ? '' : 's'} · {(totalBytes / 1024 / 1024).toFixed(1)} MB
+          </div>
+          <div className="space-y-0.5 max-h-40 overflow-y-auto">
+            {logs.map((log) => (
+              <div
+                key={log.id}
+                className="flex items-center justify-between py-1 px-2 rounded border-b border-white/[0.03] last:border-0"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="text-[10px] font-mono text-white/70">
+                    log_{log.id.toString().padStart(3, '0')}
+                  </div>
+                  <div className="text-[9px] text-white/35 font-mono">
+                    {(log.size_bytes / 1024 / 1024).toFixed(2)} MB
+                    {log.time_utc ? ` · ${new Date(log.time_utc * 1000).toISOString().replace('T', ' ').slice(0, 19)}` : ''}
+                  </div>
+                </div>
+                <button
+                  onClick={() => download(log)}
+                  disabled={downloadingId !== null}
+                  className="glass-button text-[9px] py-0.5 px-2 font-mono tracking-wider text-cyan-400 border-cyan-500/20 disabled:opacity-40"
+                >
+                  {downloadingId === log.id ? 'PULLING…' : 'DOWNLOAD'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      {error && (
+        <div className="mt-2 p-2 rounded-lg bg-red-500/10 border border-red-500/20 text-[10px] text-red-400 font-mono">
+          {error}
+        </div>
+      )}
+    </GlassPanel>
   );
 }

@@ -181,35 +181,132 @@ export interface ModelChainResponse {
 /** /telemetry responses */
 export type TelemetryLinkProfile = 'default' | 'low_bandwidth';
 
+/** MAV_VTOL_STATE (common.xml). Authoritative source of "which mode is the VTOL in". */
+export type VtolState = 'UNDEFINED' | 'TRANSITION_TO_FW' | 'TRANSITION_TO_MC' | 'MC' | 'FW';
+/** MAV_LANDED_STATE (common.xml). Driven by the FC's land detector, not altitude heuristics. */
+export type LandedState = 'UNDEFINED' | 'ON_GROUND' | 'IN_AIR' | 'TAKEOFF' | 'LANDING';
+
+export interface TelemetryConnection {
+  connected: boolean;
+  address: string;
+  link_profile: TelemetryLinkProfile;
+  autopilot: string;
+  vehicle_type: number;
+  system_id: number;
+  component_id: number;
+  uptime_s: number;
+  heartbeat_age_s: number;
+  messages_received: number;
+}
+
 export interface TelemetryStatus {
   connected: boolean;
   address?: string;
   system_id?: number;
   link_profile?: TelemetryLinkProfile;
-  connection?: {
-    address: string;
-    link_profile: TelemetryLinkProfile;
-    uptime_s: number;
-    messages_received: number;
-  };
+  connection?: TelemetryConnection;
 }
 
 export interface TelemetrySnapshot {
   timestamp: number;
-  connection: {
-    connected: boolean;
-    address: string;
-    link_profile: TelemetryLinkProfile;
-    uptime_s: number;
-    messages_received: number;
+  connection: TelemetryConnection;
+  position: {
+    latitude_deg: number | null;
+    longitude_deg: number | null;
+    absolute_altitude_m: number | null;
+    relative_altitude_m: number | null;
   };
-  position: { latitude_deg: number; longitude_deg: number; absolute_altitude_m: number; relative_altitude_m: number };
-  attitude: { roll_deg: number; pitch_deg: number; yaw_deg: number };
-  velocity: { groundspeed_ms: number; airspeed_ms: number; climb_rate_ms: number; velocity_north_ms: number; velocity_east_ms: number; velocity_down_ms: number };
-  battery: { voltage_v: number; current_a: number; remaining_pct: number; temperature_c: number | null };
-  gps: { fix_type: string; num_satellites: number; hdop: number };
-  wind: { speed_ms: number; direction_deg: number };
-  status: { flight_mode: string; armed: boolean; in_air: boolean; health_ok: boolean };
+  attitude: {
+    roll_deg: number | null;
+    pitch_deg: number | null;
+    yaw_deg: number | null;
+  };
+  velocity: {
+    groundspeed_ms: number | null;
+    airspeed_ms: number | null;
+    climb_rate_ms: number | null;
+    velocity_north_ms: number | null;
+    velocity_east_ms: number | null;
+    velocity_down_ms: number | null;
+  };
+  battery: {
+    voltage_v: number | null;
+    current_a: number | null;
+    remaining_pct: number | null;
+    temperature_c: number | null;
+  };
+  gps: {
+    fix_type: string | null;
+    num_satellites: number | null;
+    hdop: number | null;
+  };
+  wind: {
+    speed_ms: number | null;
+    direction_deg: number | null;
+  };
+  status: {
+    flight_mode: string | null;
+    armed: boolean;
+    in_air: boolean;
+    landed_state: LandedState | null;
+    vtol_state: VtolState | null;
+    health_ok: boolean;
+  };
+  health: {
+    sensor_present: Record<string, boolean>;
+    sensor_enabled: Record<string, boolean>;
+    sensor_health: Record<string, boolean>;
+  };
+  pre_arm_messages: string[];
+  rc: { signal_strength_pct: number | null };
+}
+
+/** GET /telemetry/health */
+export interface FcHealthSummary {
+  connected: boolean;
+  health_ok: boolean;
+  sensor_present: Record<string, boolean>;
+  sensor_enabled: Record<string, boolean>;
+  sensor_health: Record<string, boolean>;
+  pre_arm_messages: string[];
+}
+
+/** GET /telemetry/preflight */
+export interface PreflightCheck {
+  name: string;
+  passed: boolean;
+  blocking: boolean;
+  detail: string;
+}
+export interface PreflightSummary {
+  ready: boolean;
+  checks: PreflightCheck[];
+  blocking_failures: string[];
+}
+
+/** GET /telemetry/logs/list-from-fc entries */
+export interface FcLogEntry {
+  id: number;
+  time_utc: number;
+  size_bytes: number;
+  num_logs: number;
+}
+export interface FcLogList {
+  count: number;
+  logs: FcLogEntry[];
+}
+export interface FcLogDownload {
+  log_id: number;
+  size_bytes: number;
+  base64_data: string;
+}
+
+/** Geofence upload request */
+export interface GeofenceUploadRequest {
+  inclusion_polygons?: [number, number][][];
+  exclusion_polygons?: [number, number][][];
+  /** Deprecated; single inclusion polygon, kept for backward compat. */
+  polygon?: [number, number][];
 }
 
 export interface ParamMapping {

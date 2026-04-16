@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from 'react-error-boundary';
 import App from './App';
+import { BackendStatus } from './components/layout/BackendStatus';
 import './index.css';
 
 const queryClient = new QueryClient({
@@ -35,6 +36,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <ErrorBoundary FallbackComponent={AppErrorFallback}>
       <QueryClientProvider client={queryClient}>
         <App />
+        <BackendStatus />
       </QueryClientProvider>
     </ErrorBoundary>
   </React.StrictMode>,

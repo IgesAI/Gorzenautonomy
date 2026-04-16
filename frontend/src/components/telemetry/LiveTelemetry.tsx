@@ -2,8 +2,13 @@ import { useState, useEffect, useRef, useCallback, useId, useMemo } from 'react'
 import { GlassPanel } from '../layout/GlassPanel';
 import { chartStyles } from '../../theme/chartStyles';
 import { colors } from '../../theme/tokens';
-import { api } from '../../api/client';
-import type { TelemetrySnapshot, ParamMapping, TelemetryLinkProfile } from '../../types/api';
+import { api, telemetryWsUrl } from '../../api/client';
+import type {
+  TelemetrySnapshot,
+  ParamMapping,
+  TelemetryLinkProfile,
+  PreflightSummary,
+} from '../../types/api';
 
 const GPS_FIX_LABELS: Record<string, string> = {
   '0': 'No GPS', '1': 'No Fix', '2': '2D Fix', '3': '3D Fix',
@@ -294,8 +299,15 @@ export function LiveTelemetry({ onTelemetryUpdate }: LiveTelemetryProps) {
       prevMsgCount.current = count;
       prevMsgTime.current = now;
     }
+    // Push wind + ambient temperature upstream for the feasibility engine.
+    // Temperature comes from the BATTERY_STATUS / envelope chain; when it's
+    // absent we simply don't notify upstream (the old code fabricated 15 °C).
     if (onTelemetryUpdate && data.connection?.connected) {
-      onTelemetryUpdate({ wind_speed_ms: data.wind?.speed_ms ?? 0, temperature_c: 15 });
+      const wind = data.wind?.speed_ms;
+      const temp = data.battery?.temperature_c;
+      if (typeof wind === 'number' && typeof temp === 'number') {
+        onTelemetryUpdate({ wind_speed_ms: wind, temperature_c: temp });
+      }
     }
   }, [onTelemetryUpdate]);
 
@@ -317,10 +329,11 @@ export function LiveTelemetry({ onTelemetryUpdate }: LiveTelemetryProps) {
   const startWebSocket = useCallback(() => {
     if (wsRef.current) return;
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/api/telemetry/ws`;
     try {
-      const ws = new WebSocket(wsUrl);
+      // The backend always requires a token on the telemetry WS (JWT when
+      // auth is on, a dev token otherwise). `telemetryWsUrl` attaches the
+      // stored token so the live path doesn't silently fall back to polling.
+      const ws = new WebSocket(telemetryWsUrl());
       ws.onopen = () => {
         if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
       };
@@ -410,9 +423,24 @@ export function LiveTelemetry({ onTelemetryUpdate }: LiveTelemetryProps) {
   const battColor = battPct > 50 ? colors.status.success : battPct > 20 ? colors.status.warning : colors.status.danger;
   const gpsColor = (s?.gps.num_satellites ?? 0) >= 10 ? colors.status.success
     : (s?.gps.num_satellites ?? 0) >= 6 ? colors.status.warning : colors.status.danger;
-  const flightMode = s ? (ARDUPILOT_MODES[s.status.flight_mode] || s.status.flight_mode) : 'UNKNOWN';
+  // Flight-mode string. PX4's `MANUAL`, `AUTO.MISSION`, etc. are passed through
+  // verbatim (backend already decodes them); the ArduPilot table is a legacy
+  // fallback for bench tests that still send numeric custom_mode.
+  const flightMode = s?.status.flight_mode
+    ? ARDUPILOT_MODES[s.status.flight_mode] ?? s.status.flight_mode
+    : 'UNKNOWN';
+  const vtolState = s?.status.vtol_state;
+  const landedState = s?.status.landed_state;
+  const autopilot = s?.connection?.autopilot ?? 'unknown';
   const uptime = s?.connection?.uptime_s ?? 0;
   const uptimeStr = uptime > 0 ? `${Math.floor(uptime / 60)}:${String(Math.floor(uptime % 60)).padStart(2, '0')}` : '--:--';
+  const heartbeatAge = s?.connection?.heartbeat_age_s ?? null;
+  const preArm = s?.pre_arm_messages ?? [];
+  const sensorHealth = s?.health?.sensor_health ?? {};
+  const sensorEnabled = s?.health?.sensor_enabled ?? {};
+
+  // Coerce possibly-null scalars to displayable numbers for the HUD.
+  const num = (v: number | null | undefined, fb = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : fb);
 
   return (
     <div className="h-full overflow-y-auto space-y-2.5 p-3">
@@ -469,7 +497,7 @@ export function LiveTelemetry({ onTelemetryUpdate }: LiveTelemetryProps) {
           {/* Flight Mode + Status Strip */}
           <div className="flex gap-2">
             <GlassPanel padding="p-3" className="flex-1">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                   {[
                     { ok: s.status.armed, on: 'ARMED', off: 'DISARMED', dangerOn: true },
@@ -484,14 +512,32 @@ export function LiveTelemetry({ onTelemetryUpdate }: LiveTelemetryProps) {
                       </span>
                     </div>
                   ))}
+                  {vtolState && (
+                    <VtolBadge state={vtolState} />
+                  )}
+                  {landedState && landedState !== 'UNDEFINED' && (
+                    <span className="text-[8px] font-mono tracking-widest text-white/40 uppercase">
+                      {landedState.replace('_', ' ')}
+                    </span>
+                  )}
                 </div>
-                <div className="px-3 py-1 rounded-md bg-white/[0.06] border border-white/[0.08]">
-                  <span className="text-xs font-mono font-bold tracking-wider text-white/90"
-                    style={{ textShadow: '0 0 10px rgba(255,255,255,0.15)' }}>
-                    {flightMode}
+                <div className="flex items-center gap-2">
+                  <span className="text-[8px] font-mono text-white/30 uppercase tracking-widest">
+                    {autopilot}
                   </span>
+                  <div className="px-3 py-1 rounded-md bg-white/[0.06] border border-white/[0.08]">
+                    <span className="text-xs font-mono font-bold tracking-wider text-white/90"
+                      style={{ textShadow: '0 0 10px rgba(255,255,255,0.15)' }}>
+                      {flightMode}
+                    </span>
+                  </div>
                 </div>
               </div>
+              {heartbeatAge != null && heartbeatAge > 2 && (
+                <div className="mt-2 text-[9px] font-mono text-amber-400/70">
+                  Heartbeat age {heartbeatAge.toFixed(1)}s — link may be degraded
+                </div>
+              )}
             </GlassPanel>
           </div>
 
@@ -499,21 +545,31 @@ export function LiveTelemetry({ onTelemetryUpdate }: LiveTelemetryProps) {
           <div className="flex gap-2.5">
             <GlassPanel padding="p-3" className="flex flex-col items-center justify-center">
               <span className="text-[8px] uppercase tracking-widest text-white/30 mb-1">ATTITUDE</span>
-              <AttitudeIndicator roll={s.attitude.roll_deg} pitch={s.attitude.pitch_deg} />
+              <AttitudeIndicator roll={num(s.attitude.roll_deg)} pitch={num(s.attitude.pitch_deg)} />
             </GlassPanel>
             <GlassPanel padding="p-3" className="flex flex-col items-center justify-center">
               <span className="text-[8px] uppercase tracking-widest text-white/30 mb-1">HEADING</span>
-              <HeadingCompass heading={s.attitude.yaw_deg < 0 ? s.attitude.yaw_deg + 360 : s.attitude.yaw_deg} />
+              <HeadingCompass heading={((num(s.attitude.yaw_deg) % 360) + 360) % 360} />
             </GlassPanel>
             <GlassPanel padding="p-3" className="flex-1">
               <span className="text-[8px] uppercase tracking-widest text-white/30">POSITION</span>
               <div className="mt-2 space-y-1.5">
-                <StatCell label="LATITUDE" value={formatCoord(s.position.latitude_deg, true)} />
-                <StatCell label="LONGITUDE" value={formatCoord(s.position.longitude_deg, false)} />
+                <StatCell
+                  label="LATITUDE"
+                  value={s.position.latitude_deg != null ? formatCoord(s.position.latitude_deg, true) : '—'}
+                />
+                <StatCell
+                  label="LONGITUDE"
+                  value={s.position.longitude_deg != null ? formatCoord(s.position.longitude_deg, false) : '—'}
+                />
                 <div className="grid grid-cols-2 gap-1.5">
-                  <StatCell label="ALT MSL" value={s.position.absolute_altitude_m.toFixed(1)} unit="m" />
-                  <StatCell label="ALT AGL" value={s.position.relative_altitude_m.toFixed(1)} unit="m"
-                    color={s.position.relative_altitude_m > 0 ? '#60a5fa' : undefined} />
+                  <StatCell label="ALT MSL" value={s.position.absolute_altitude_m != null ? s.position.absolute_altitude_m.toFixed(1) : '—'} unit="m" />
+                  <StatCell
+                    label="ALT AGL"
+                    value={s.position.relative_altitude_m != null ? s.position.relative_altitude_m.toFixed(1) : '—'}
+                    unit="m"
+                    color={num(s.position.relative_altitude_m) > 0 ? '#60a5fa' : undefined}
+                  />
                 </div>
               </div>
             </GlassPanel>
@@ -524,15 +580,15 @@ export function LiveTelemetry({ onTelemetryUpdate }: LiveTelemetryProps) {
             <div className="flex items-center justify-between mb-3">
               <span className="text-[8px] uppercase tracking-widest text-white/30">VELOCITY</span>
               <span className="text-[9px] font-mono text-white/25">
-                N:{s.velocity.velocity_north_ms.toFixed(1)} E:{s.velocity.velocity_east_ms.toFixed(1)} D:{s.velocity.velocity_down_ms.toFixed(1)}
+                N:{num(s.velocity.velocity_north_ms).toFixed(1)} E:{num(s.velocity.velocity_east_ms).toFixed(1)} D:{num(s.velocity.velocity_down_ms).toFixed(1)}
               </span>
             </div>
             <div className="flex items-center justify-around">
-              <ArcGauge value={s.velocity.groundspeed_ms} min={0} max={40}
+              <ArcGauge value={num(s.velocity.groundspeed_ms)} min={0} max={40}
                 label="GND SPEED" unit="m/s" color="#ffffff" size={100} />
-              <ArcGauge value={s.velocity.airspeed_ms} min={0} max={40}
+              <ArcGauge value={num(s.velocity.airspeed_ms)} min={0} max={40}
                 label="AIR SPEED" unit="m/s" color="#06b6d4" size={100} />
-              <ArcGauge value={s.velocity.climb_rate_ms} min={-10} max={10}
+              <ArcGauge value={num(s.velocity.climb_rate_ms)} min={-10} max={10}
                 label="V/S" unit="m/s" color="#a78bfa" size={100} />
             </div>
           </GlassPanel>
@@ -557,10 +613,10 @@ export function LiveTelemetry({ onTelemetryUpdate }: LiveTelemetryProps) {
               </div>
             </div>
             <div className="grid grid-cols-3 gap-2">
-              <ArcGauge value={s.battery.voltage_v} min={30} max={52}
+              <ArcGauge value={num(s.battery.voltage_v)} min={30} max={52}
                 label="VOLTAGE" unit="V" color={battColor} size={90}
                 thresholds={{ warn: 38, danger: 34, invert: true }} />
-              <ArcGauge value={s.battery.current_a} min={0} max={60}
+              <ArcGauge value={num(s.battery.current_a)} min={0} max={60}
                 label="CURRENT" unit="A" color="#f59e0b" size={90}
                 thresholds={{ warn: 40, danger: 50 }} />
               <ArcGauge value={battPct} min={0} max={100}
@@ -577,21 +633,23 @@ export function LiveTelemetry({ onTelemetryUpdate }: LiveTelemetryProps) {
                 <div className="flex items-center justify-between">
                   <span className="text-[9px] font-mono text-white/40">Fix</span>
                   <span className="text-[10px] font-mono font-bold" style={{ color: gpsColor }}>
-                    {GPS_FIX_LABELS[String(s.gps.fix_type)] ?? String(s.gps.fix_type)}
+                    {s.gps.fix_type ? (GPS_FIX_LABELS[String(s.gps.fix_type)] ?? String(s.gps.fix_type)) : '—'}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-[9px] font-mono text-white/40">Sats</span>
                   <div className="flex items-center gap-1.5">
                     <span className="text-[10px] font-mono font-bold" style={{ color: gpsColor }}>
-                      {s.gps.num_satellites}
+                      {s.gps.num_satellites ?? '—'}
                     </span>
-                    <SignalBars strength={Math.min(100, (s.gps.num_satellites / 15) * 100)} label="" />
+                    <SignalBars strength={Math.min(100, (num(s.gps.num_satellites) / 15) * 100)} label="" />
                   </div>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-[9px] font-mono text-white/40">HDOP</span>
-                  <span className="text-[10px] font-mono text-white/60">{s.gps.hdop.toFixed(1)}</span>
+                  <span className="text-[10px] font-mono text-white/60">
+                    {s.gps.hdop != null ? s.gps.hdop.toFixed(2) : '—'}
+                  </span>
                 </div>
               </div>
             </GlassPanel>
@@ -601,7 +659,7 @@ export function LiveTelemetry({ onTelemetryUpdate }: LiveTelemetryProps) {
                 <div className="relative w-12 h-12">
                   <svg width={48} height={48} viewBox="0 0 48 48">
                     <circle cx={24} cy={24} r={20} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={1} />
-                    <g transform={`rotate(${s.wind.direction_deg}, 24, 24)`}>
+                    <g transform={`rotate(${num(s.wind.direction_deg)}, 24, 24)`}>
                       <line x1={24} y1={6} x2={24} y2={18} stroke="#06b6d4" strokeWidth={2} strokeLinecap="round"
                         style={{ filter: 'drop-shadow(0 0 3px rgba(6,182,212,0.4))' }} />
                       <polygon points="24,4 21,12 27,12" fill="#06b6d4" />
@@ -609,12 +667,31 @@ export function LiveTelemetry({ onTelemetryUpdate }: LiveTelemetryProps) {
                   </svg>
                 </div>
                 <div className="flex flex-col gap-1">
-                  <StatCell label="SPEED" value={s.wind.speed_ms.toFixed(1)} unit="m/s" color="#06b6d4" />
-                  <StatCell label="DIR" value={s.wind.direction_deg.toFixed(0)} unit="deg" />
+                  <StatCell
+                    label="SPEED"
+                    value={s.wind.speed_ms != null ? s.wind.speed_ms.toFixed(1) : '—'}
+                    unit="m/s"
+                    color="#06b6d4"
+                  />
+                  <StatCell
+                    label="DIR"
+                    value={s.wind.direction_deg != null ? s.wind.direction_deg.toFixed(0) : '—'}
+                    unit="deg"
+                  />
                 </div>
               </div>
             </GlassPanel>
           </div>
+
+          <SensorHealthPanel
+            present={s.health?.sensor_present ?? {}}
+            enabled={sensorEnabled}
+            health={sensorHealth}
+          />
+
+          <PreArmMessagesPanel messages={preArm} />
+
+          <PreflightChecklistPanel connected={connected} />
         </>
       )}
 
@@ -704,5 +781,273 @@ export function LiveTelemetry({ onTelemetryUpdate }: LiveTelemetryProps) {
         )}
       </GlassPanel>
     </div>
+  );
+}
+
+// ─── VTOL state badge ────────────────────────────────────────────────────────
+
+function VtolBadge({ state }: { state: NonNullable<TelemetrySnapshot['status']['vtol_state']> }) {
+  if (state === 'UNDEFINED') return null;
+  const config: Record<string, { label: string; color: string; bg: string; border: string }> = {
+    MC: {
+      label: 'MULTIROTOR',
+      color: '#60a5fa',
+      bg: 'rgba(96,165,250,0.12)',
+      border: 'rgba(96,165,250,0.30)',
+    },
+    FW: {
+      label: 'FIXED-WING',
+      color: '#a78bfa',
+      bg: 'rgba(167,139,250,0.12)',
+      border: 'rgba(167,139,250,0.30)',
+    },
+    TRANSITION_TO_FW: {
+      label: 'TRANS → FW',
+      color: '#f59e0b',
+      bg: 'rgba(245,158,11,0.12)',
+      border: 'rgba(245,158,11,0.35)',
+    },
+    TRANSITION_TO_MC: {
+      label: 'TRANS → MC',
+      color: '#f59e0b',
+      bg: 'rgba(245,158,11,0.12)',
+      border: 'rgba(245,158,11,0.35)',
+    },
+  };
+  const cfg = config[state];
+  if (!cfg) return null;
+  return (
+    <div
+      className="px-2 py-0.5 rounded-md text-[8px] font-mono font-bold tracking-widest uppercase"
+      style={{
+        background: cfg.bg,
+        border: `1px solid ${cfg.border}`,
+        color: cfg.color,
+        boxShadow: `0 0 6px ${cfg.color}30`,
+      }}
+    >
+      {cfg.label}
+    </div>
+  );
+}
+
+// ─── Sensor health grid ──────────────────────────────────────────────────────
+
+const SENSOR_DISPLAY_ORDER: [key: string, label: string][] = [
+  ['gyro', 'Gyro'],
+  ['accel', 'Accel'],
+  ['mag', 'Mag'],
+  ['abs_pressure', 'Baro'],
+  ['diff_pressure', 'Airspeed'],
+  ['gps', 'GPS'],
+  ['ahrs', 'AHRS'],
+  ['xy_position_control', 'XY Ctrl'],
+  ['z_altitude_control', 'Alt Ctrl'],
+  ['attitude_stabilization', 'Att Stab'],
+  ['motor_outputs', 'Motors'],
+  ['rc_receiver', 'RC'],
+  ['battery', 'Battery'],
+  ['logging', 'Log'],
+  ['prearm_check', 'Pre-arm'],
+];
+
+function SensorHealthPanel({
+  present,
+  enabled,
+  health,
+}: {
+  present: Record<string, boolean>;
+  enabled: Record<string, boolean>;
+  health: Record<string, boolean>;
+}) {
+  const hasAnyEnabled = Object.values(enabled).some(Boolean);
+  if (!hasAnyEnabled) return null;
+  return (
+    <GlassPanel padding="p-3">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[8px] uppercase tracking-widest text-white/30">SENSOR HEALTH</span>
+        <span className="text-[8px] font-mono text-white/25">SYS_STATUS bitmask</span>
+      </div>
+      <div className="grid grid-cols-5 gap-1.5">
+        {SENSOR_DISPLAY_ORDER.filter(([key]) => present[key] || enabled[key]).map(([key, label]) => {
+          const isEnabled = !!enabled[key];
+          const isHealthy = !!health[key];
+          const status = !isEnabled ? 'off' : isHealthy ? 'ok' : 'fault';
+          const color =
+            status === 'off'
+              ? 'rgba(255,255,255,0.15)'
+              : status === 'ok'
+              ? '#10b981'
+              : '#ef4444';
+          const ring =
+            status === 'off'
+              ? 'rgba(255,255,255,0.06)'
+              : status === 'ok'
+              ? 'rgba(16,185,129,0.25)'
+              : 'rgba(239,68,68,0.35)';
+          return (
+            <div
+              key={key}
+              className="flex items-center gap-1.5 px-1.5 py-1 rounded bg-white/[0.02] border"
+              style={{ borderColor: ring }}
+              title={`${key}: ${status}`}
+            >
+              <span
+                className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                style={{
+                  backgroundColor: color,
+                  boxShadow: status !== 'off' ? `0 0 5px ${color}80` : undefined,
+                }}
+              />
+              <span
+                className={`text-[9px] font-mono ${
+                  status === 'fault' ? 'text-red-400' : status === 'ok' ? 'text-white/65' : 'text-white/30'
+                }`}
+              >
+                {label}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </GlassPanel>
+  );
+}
+
+// ─── Pre-arm STATUSTEXT stream ───────────────────────────────────────────────
+
+function PreArmMessagesPanel({ messages }: { messages: string[] }) {
+  if (messages.length === 0) return null;
+  return (
+    <GlassPanel padding="p-3">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[8px] uppercase tracking-widest text-white/30">FC MESSAGES</span>
+        <span className="text-[8px] font-mono text-white/25">most recent · {messages.length}</span>
+      </div>
+      <div className="space-y-1 max-h-36 overflow-y-auto">
+        {messages.map((msg, i) => {
+          // Format: "[severity] text". severity 0-3 is critical/error/warning.
+          const match = msg.match(/^\[(\d+)\]\s*(.*)$/);
+          const sev = match ? Number(match[1]) : 6;
+          const body = match ? match[2] : msg;
+          const color = sev <= 3 ? '#ef4444' : sev <= 4 ? '#f59e0b' : 'rgba(255,255,255,0.55)';
+          return (
+            <div key={`${i}-${msg}`} className="flex items-start gap-2 text-[10px] font-mono">
+              <span
+                className="w-1 h-1 rounded-full flex-shrink-0 mt-1.5"
+                style={{ backgroundColor: color, boxShadow: `0 0 4px ${color}80` }}
+              />
+              <span style={{ color }}>{body}</span>
+            </div>
+          );
+        })}
+      </div>
+    </GlassPanel>
+  );
+}
+
+// ─── Pre-flight checklist (uses /telemetry/preflight) ────────────────────────
+
+function PreflightChecklistPanel({ connected }: { connected: boolean }) {
+  const [summary, setSummary] = useState<PreflightSummary | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!connected) {
+      setSummary(null);
+      return;
+    }
+    let cancelled = false;
+    const poll = async () => {
+      setLoading(true);
+      try {
+        const res = await api.telemetry.preflight();
+        if (!cancelled) setSummary(res);
+      } catch {
+        /* banner covers the error */
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    poll();
+    const id = window.setInterval(poll, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [connected]);
+
+  if (!connected) return null;
+  const ready = summary?.ready ?? false;
+  const checks = summary?.checks ?? [];
+  const headline = !summary
+    ? 'Checking…'
+    : ready
+    ? 'Ready to arm'
+    : `Blocked: ${summary.blocking_failures.join(', ') || 'pending'}`;
+  const headlineColor = !summary
+    ? 'text-white/40'
+    : ready
+    ? 'text-emerald-400'
+    : 'text-red-400';
+
+  return (
+    <GlassPanel padding="p-3">
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="flex items-center justify-between w-full outline-none focus-visible:ring-2 focus-visible:ring-gorzen-500/30 rounded"
+      >
+        <div className="flex items-center gap-2">
+          <div
+            className={`w-2 h-2 rounded-full ${loading ? 'animate-pulse' : ''}`}
+            style={{
+              backgroundColor: !summary
+                ? 'rgba(255,255,255,0.25)'
+                : ready
+                ? '#10b981'
+                : '#ef4444',
+              boxShadow: summary
+                ? `0 0 6px ${ready ? 'rgba(16,185,129,0.55)' : 'rgba(239,68,68,0.55)'}`
+                : undefined,
+            }}
+          />
+          <span className="text-[9px] font-mono uppercase tracking-wider text-white/50">
+            PRE-FLIGHT
+          </span>
+          <span className={`text-[10px] font-mono font-semibold ${headlineColor}`}>
+            {headline}
+          </span>
+        </div>
+        <span className="text-[9px] font-mono text-white/30">
+          {expanded ? '▾' : '▸'}
+        </span>
+      </button>
+      {expanded && checks.length > 0 && (
+        <div className="mt-2 space-y-1 border-t border-white/[0.05] pt-2">
+          {checks.map((c) => (
+            <div key={c.name} className="flex items-start gap-2 text-[10px] font-mono">
+              <span
+                className="w-1.5 h-1.5 rounded-full flex-shrink-0 mt-1"
+                style={{
+                  backgroundColor: c.passed ? '#10b981' : c.blocking ? '#ef4444' : '#f59e0b',
+                }}
+              />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className={c.passed ? 'text-white/70' : c.blocking ? 'text-red-400' : 'text-amber-400'}>
+                    {c.name}
+                  </span>
+                  {!c.passed && !c.blocking && (
+                    <span className="text-[8px] uppercase text-amber-400/70 tracking-widest">warn</span>
+                  )}
+                </div>
+                <div className="text-white/40 text-[9px] truncate">{c.detail}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </GlassPanel>
   );
 }
