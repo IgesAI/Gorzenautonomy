@@ -30,7 +30,7 @@ dependencies = [
     "websockets>=14.0",
     "mavsdk>=2.0",
     "ortools>=9.0",
-    "pint>=0.23",
+    "pint>=0.25.3",
 ]
 
 [project.optional-dependencies]
